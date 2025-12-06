@@ -17,6 +17,37 @@
           -ms-overflow-style: none;  /* IE and Edge */
           scrollbar-width: none;  /* Firefox */
       }
+      
+      @keyframes scroll {
+        0% { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
+      }
+      
+      .animate-scroll {
+        animation: scroll 30s linear infinite;
+      }
+      
+      .animate-fade-in {
+        animation: fadeIn 0.5s ease-out;
+      }
+      
+      .animate-slide-up {
+        animation: slideUp 0.5s ease-out;
+      }
+      
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      
+      @keyframes slideUp {
+        from { transform: translateY(20px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      
+      .animate-bounce-slow {
+        animation: bounce 3s infinite;
+      }
     </style>
   <script type="importmap">
 {

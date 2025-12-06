@@ -2,6 +2,7 @@
   "name": "Smart Dhaba & Restaurant System",
   "description": "A comprehensive digital management system for Dhabas and Restaurants including ordering, KDS, delivery tracking, and admin analytics.",
   "requestFramePermissions": [
-    "geolocation"
+    "geolocation",
+    "microphone"
   ]
 }

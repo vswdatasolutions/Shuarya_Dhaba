@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { MenuItem, CartItem, OrderType } from '../types';
-import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Home, Phone, Instagram, Facebook, LogOut, ChevronRight } from 'lucide-react';
-import { CATEGORIES } from '../constants';
+import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Home, Phone, Instagram, Facebook, LogOut, ChevronRight, Volume2, X } from 'lucide-react';
+import { CATEGORIES, MOCK_MENU } from '../constants';
 import { getSmartRecommendations } from '../services/geminiService';
+import { VoiceAssistant } from './VoiceAssistant';
 
 interface CustomerViewProps {
   menu: MenuItem[];
@@ -20,13 +21,24 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [bookingDetails, setBookingDetails] = useState({ name: userName || '', people: 2, time: '' });
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [playingAudio, setPlayingAudio] = useState<string | null>(null);
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
 
+  // Show welcome popup on first mount
+  useEffect(() => {
+    const hasSeenWelcome = localStorage.getItem('hasSeenWelcome');
+    if (!hasSeenWelcome) {
+      setShowWelcome(true);
+      localStorage.setItem('hasSeenWelcome', 'true');
+    }
+  }, []);
+
   // Gemini Smart Recommendations when cart updates
   useEffect(() => {
-    if (cart.length > 0 && cart.length % 2 === 0) { // Trigger every 2 items added to save API calls
+    if (cart.length > 0 && cart.length % 2 === 0) { 
         const itemNames = cart.map(c => c.name);
         getSmartRecommendations(itemNames).then(recs => setRecommendations(recs));
     }
@@ -47,8 +59,54 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
     return cart.find(i => i.id === itemId)?.quantity || 0;
   };
 
+  const playDishDescription = (description: string, id: string) => {
+    if (playingAudio === id) {
+        window.speechSynthesis.cancel();
+        setPlayingAudio(null);
+        return;
+    }
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(description);
+    utterance.rate = 0.9;
+    utterance.onend = () => setPlayingAudio(null);
+    setPlayingAudio(id);
+    window.speechSynthesis.speak(utterance);
+  };
+
   return (
-    <div className="pb-24 md:pb-0 bg-gray-50 min-h-screen font-sans flex flex-col transition-all duration-300">
+    <div className="pb-24 md:pb-0 bg-gray-50 min-h-screen font-sans flex flex-col transition-all duration-300 relative">
+      
+      {/* AI Voice Assistant */}
+      <VoiceAssistant menu={menu} addToCart={addToCart} />
+
+      {/* Welcome Popup */}
+      {showWelcome && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl overflow-hidden max-w-md w-full shadow-2xl transform transition-all scale-100 animate-slide-up relative">
+            <button onClick={() => setShowWelcome(false)} className="absolute top-3 right-3 bg-black/10 p-1 rounded-full z-10"><X size={20}/></button>
+            <div className="h-40 overflow-hidden relative">
+                 <img src="https://images.unsplash.com/photo-1596797038530-2c107229654b?ixlib=rb-1.2.1&auto=format&fit=crop&w=800&q=80" className="w-full h-full object-cover" />
+                 <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent"></div>
+                 <div className="absolute bottom-4 left-4 text-white">
+                    <span className="bg-orange-500 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider">Welcome Gift</span>
+                 </div>
+            </div>
+            <div className="p-6 text-center">
+                <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Authentic Dhaba Flavors!</h2>
+                <p className="text-gray-600 text-sm mb-6 leading-relaxed">
+                   Experience the real taste of highway dining. Use our <span className="text-orange-600 font-bold">AI Voice Waiter</span> to order in Hindi!
+                </p>
+                <button 
+                    onClick={() => setShowWelcome(false)}
+                    className="w-full bg-gradient-to-r from-orange-600 to-red-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-orange-200 hover:shadow-xl transition-all active:scale-95"
+                >
+                    Start Ordering
+                </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Universal Header */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md shadow-sm border-b border-gray-100 px-4 md:px-8 py-3 flex justify-between items-center transition-all">
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setView('HOME')}>
@@ -120,7 +178,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
           {view === 'HOME' && (
               <div className="animate-fade-in pb-10">
                   {/* Hero Section */}
-                  <div className="relative w-full h-[40vh] md:h-[60vh] bg-gray-900 flex items-center justify-center overflow-hidden mb-8 md:rounded-b-3xl shadow-xl">
+                  <div className="relative w-full h-[40vh] md:h-[60vh] bg-gray-900 flex items-center justify-center overflow-hidden mb-0 md:rounded-b-3xl shadow-xl">
                       <div className="absolute inset-0 opacity-50 bg-[url('https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&q=80')] bg-cover bg-center"></div>
                       <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-90"></div>
                       
@@ -144,20 +202,20 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                       </div>
                   </div>
 
-                  {/* Mobile Quick Actions Grid */}
-                  <div className="grid grid-cols-3 gap-3 px-4 md:hidden -mt-12 relative z-20 mb-8">
-                      <div className="bg-white p-3 rounded-2xl shadow-lg border border-gray-100 flex flex-col items-center justify-center text-center gap-2" onClick={() => setView('MENU')}>
-                         <div className="p-2.5 bg-orange-50 text-orange-600 rounded-full"><Utensils size={20}/></div>
-                         <span className="text-[10px] font-bold text-gray-700">Menu</span>
-                      </div>
-                      <div className="bg-white p-3 rounded-2xl shadow-lg border border-gray-100 flex flex-col items-center justify-center text-center gap-2" onClick={() => setView('BOOKING')}>
-                         <div className="p-2.5 bg-blue-50 text-blue-600 rounded-full"><Calendar size={20}/></div>
-                         <span className="text-[10px] font-bold text-gray-700">Book</span>
-                      </div>
-                      <div className="bg-white p-3 rounded-2xl shadow-lg border border-gray-100 flex flex-col items-center justify-center text-center gap-2" onClick={() => setView('CART')}>
-                         <div className="p-2.5 bg-green-50 text-green-600 rounded-full"><ShoppingBag size={20}/></div>
-                         <span className="text-[10px] font-bold text-gray-700">Cart</span>
-                      </div>
+                  {/* Infinite Horizontal Marquee */}
+                  <div className="relative w-full bg-gray-900 border-t border-gray-800 overflow-hidden py-3 mb-8 md:mb-12">
+                     <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-gray-900 to-transparent z-10"></div>
+                     <div className="absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-gray-900 to-transparent z-10"></div>
+                     
+                     <div className="flex animate-scroll whitespace-nowrap gap-8">
+                        {/* Repeat list twice for seamless loop */}
+                        {[...MOCK_MENU, ...MOCK_MENU].map((item, idx) => (
+                           <div key={`${item.id}-${idx}`} className="flex items-center gap-3 bg-gray-800/50 backdrop-blur rounded-full pr-4 pl-1 py-1 border border-gray-700/50 hover:bg-gray-800 transition-colors cursor-pointer group" onClick={() => setView('MENU')}>
+                              <img src={item.imageUrl} className="w-8 h-8 rounded-full object-cover border border-orange-500/50" />
+                              <span className="text-gray-300 text-xs font-bold group-hover:text-orange-400 transition-colors">{item.name}</span>
+                           </div>
+                        ))}
+                     </div>
                   </div>
 
                   {/* Features Section */}
@@ -281,26 +339,33 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                     ))}
                 </div>
 
-                {/* Menu List - Mobile Optimized */}
+                {/* Menu List - Psychological Design */}
                 <div className="px-4 pb-8 md:px-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                     {filteredMenu.map(item => {
                         const qty = getItemQuantity(item.id);
                         return (
-                            <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 flex gap-3 md:gap-4 transition-all hover:shadow-md">
+                            <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 flex gap-3 md:gap-4 transition-all hover:shadow-lg hover:-translate-y-1">
                                 {/* Image Container */}
                                 <div className="w-24 h-24 md:w-32 md:h-32 flex-shrink-0 rounded-xl bg-gray-100 overflow-hidden relative group">
                                     <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                    <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm rounded px-1.5 py-0.5 shadow-sm">
+                                    <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm rounded px-1.5 py-0.5 shadow-sm z-10">
                                         <div className={`w-3 h-3 border-2 flex items-center justify-center rounded-sm ${item.isVegetarian ? 'border-green-600' : 'border-red-600'}`}>
                                             <div className={`w-1.5 h-1.5 rounded-full ${item.isVegetarian ? 'bg-green-600' : 'bg-red-600'}`}></div>
                                         </div>
                                     </div>
+                                    {/* Audio Description Button */}
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); playDishDescription(item.description, item.id); }}
+                                        className={`absolute bottom-1.5 right-1.5 p-1.5 rounded-full backdrop-blur-md transition-all ${playingAudio === item.id ? 'bg-orange-600 text-white animate-pulse' : 'bg-white/70 text-gray-700 hover:bg-white'}`}
+                                    >
+                                        <Volume2 size={14} />
+                                    </button>
                                 </div>
                                 
                                 {/* Content Container */}
                                 <div className="flex-1 flex flex-col justify-between py-0.5">
                                     <div>
-                                        <h3 className="font-bold text-gray-900 text-sm md:text-lg leading-tight mb-1">{item.name}</h3>
+                                        <h3 className="font-extrabold text-gray-900 text-sm md:text-lg leading-tight mb-1">{item.name}</h3>
                                         <p className="text-[10px] md:text-xs text-gray-500 line-clamp-2 leading-relaxed">{item.description}</p>
                                     </div>
                                     
