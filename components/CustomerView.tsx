@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MenuItem, CartItem, OrderType } from '../types';
-import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Home, Phone, Instagram, Facebook, LogOut, ChevronRight, Volume2, X } from 'lucide-react';
+import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Home, Phone, Instagram, Facebook, LogOut, ChevronRight, Volume2, X, VolumeX } from 'lucide-react';
 import { CATEGORIES, MOCK_MENU } from '../constants';
 import { getSmartRecommendations } from '../services/geminiService';
 import { VoiceAssistant } from './VoiceAssistant';
@@ -38,10 +38,9 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
 
   // Gemini Smart Recommendations when cart updates
   useEffect(() => {
-    if (cart.length > 0 && cart.length % 2 === 0) { 
-        const itemNames = cart.map(c => c.name);
-        getSmartRecommendations(itemNames).then(recs => setRecommendations(recs));
-    }
+    const itemNames = cart.map(c => c.name);
+    // Fetches recommendations even if cart is empty (providing general suggestions)
+    getSmartRecommendations(itemNames).then(recs => setRecommendations(recs));
   }, [cart.length]);
 
   const filteredMenu = activeCategory === 'All' 
@@ -60,18 +59,42 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
   };
 
   const playDishDescription = (description: string, id: string) => {
+    // If clicking same item, stop it
     if (playingAudio === id) {
         window.speechSynthesis.cancel();
         setPlayingAudio(null);
         return;
     }
+
+    // Cancel any current speech
     window.speechSynthesis.cancel();
+    
+    // Create new speech
     const utterance = new SpeechSynthesisUtterance(description);
-    utterance.rate = 0.9;
+    
+    // Try to find a good English voice, prefer Indian English
+    const voices = window.speechSynthesis.getVoices();
+    const indianVoice = voices.find(v => v.lang === 'en-IN');
+    if (indianVoice) {
+        utterance.voice = indianVoice;
+    }
+    
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    
+    utterance.onstart = () => setPlayingAudio(id);
     utterance.onend = () => setPlayingAudio(null);
-    setPlayingAudio(id);
+    utterance.onerror = () => setPlayingAudio(null);
+    
     window.speechSynthesis.speak(utterance);
   };
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+        window.speechSynthesis.cancel();
+    };
+  }, []);
 
   return (
     <div className="pb-24 md:pb-0 bg-gray-50 min-h-screen font-sans flex flex-col transition-all duration-300 relative">
@@ -81,7 +104,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
 
       {/* Welcome Popup */}
       {showWelcome && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
           <div className="bg-white rounded-3xl overflow-hidden max-w-md w-full shadow-2xl transform transition-all scale-100 animate-slide-up relative">
             <button onClick={() => setShowWelcome(false)} className="absolute top-3 right-3 bg-black/10 p-1 rounded-full z-10"><X size={20}/></button>
             <div className="h-40 overflow-hidden relative">
@@ -94,7 +117,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
             <div className="p-6 text-center">
                 <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Authentic Dhaba Flavors!</h2>
                 <p className="text-gray-600 text-sm mb-6 leading-relaxed">
-                   Experience the real taste of highway dining. Use our <span className="text-orange-600 font-bold">AI Voice Waiter</span> to order in Hindi!
+                   Experience the real taste of highway dining. Use our <span className="text-orange-600 font-bold">Voice Waiter Raju</span> to order in Hindi!
                 </p>
                 <button 
                     onClick={() => setShowWelcome(false)}
@@ -356,9 +379,10 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                                     {/* Audio Description Button */}
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); playDishDescription(item.description, item.id); }}
-                                        className={`absolute bottom-1.5 right-1.5 p-1.5 rounded-full backdrop-blur-md transition-all ${playingAudio === item.id ? 'bg-orange-600 text-white animate-pulse' : 'bg-white/70 text-gray-700 hover:bg-white'}`}
+                                        className={`absolute bottom-1.5 right-1.5 p-1.5 rounded-full backdrop-blur-md transition-all shadow-sm z-20 ${playingAudio === item.id ? 'bg-orange-600 text-white animate-pulse ring-2 ring-orange-200' : 'bg-white/80 text-gray-700 hover:bg-white hover:text-orange-600'}`}
+                                        title="Hear description"
                                     >
-                                        <Volume2 size={14} />
+                                        {playingAudio === item.id ? <VolumeX size={14} /> : <Volume2 size={14} />}
                                     </button>
                                 </div>
                                 
