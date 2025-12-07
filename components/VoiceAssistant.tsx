@@ -15,7 +15,9 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
-  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+  // We don't rely on 'voices' state for the speak function anymore to avoid stale/empty state on mobile
+  // But we keep it to trigger re-renders if needed
+  const [voicesLoaded, setVoicesLoaded] = useState(false);
   
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
@@ -24,30 +26,16 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   const apiKey = process.env.API_KEY || '';
   const ai = new GoogleGenAI({ apiKey });
 
-  // Load Voices on Mount with retry
+  // Load Voices trigger
   useEffect(() => {
     const loadVoices = () => {
-      let available = window.speechSynthesis.getVoices();
-      if (available.length > 0) {
-        setVoices(available);
-      }
+      const vs = window.speechSynthesis.getVoices();
+      if (vs.length > 0) setVoicesLoaded(true);
     };
-    
-    // Chrome requires this event
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
-    
-    // Fallback retry
-    const timer = setInterval(() => {
-        if (voices.length === 0) loadVoices();
-        else clearInterval(timer);
-    }, 500);
-
-    return () => {
-      window.speechSynthesis.onvoiceschanged = null;
-      clearInterval(timer);
-    };
-  }, [voices.length]);
+    return () => { window.speechSynthesis.onvoiceschanged = null; };
+  }, []);
 
   useEffect(() => {
     // Initialize Speech Recognition
@@ -83,22 +71,32 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
     const utterance = new SpeechSynthesisUtterance(text);
     
-    // Priority: Indian English (Best for Hinglish/Roman Script) -> Hindi -> Default
-    // We prioritize en-IN because pure hi-IN voices often spell out Roman script text letter by letter.
-    const indianEnglishVoice = voices.find(v => v.lang === 'en-IN' || v.lang.includes('en_IN'));
-    const hindiVoice = voices.find(v => v.lang.includes('hi') || v.name.toLowerCase().includes('hindi'));
+    // FETCH VOICES DYNAMICALLY ON CLICK/TRIGGER
+    // This is crucial for mobile browsers where getVoices() might return empty until interaction
+    const voices = window.speechSynthesis.getVoices();
     
+    // Priority: Indian English (Best for Hinglish/Roman Script) -> Hindi -> Default
+    const indianEnglishVoice = voices.find(v => v.lang === 'en-IN' || v.lang.includes('en_IN'));
+    const hindiVoice = voices.find(v => v.lang === 'hi-IN' || v.lang.includes('hi'));
+    const ukVoice = voices.find(v => v.lang === 'en-GB'); // Fallback
+
     if (indianEnglishVoice) {
         utterance.voice = indianEnglishVoice;
-        utterance.rate = 0.95; // Slightly slower for better clarity
-        utterance.pitch = 1.0;
+        utterance.rate = 0.95; 
     } else if (hindiVoice) {
         utterance.voice = hindiVoice;
         utterance.rate = 1.0; 
+    } else if (ukVoice) {
+        utterance.voice = ukVoice;
     }
+    
+    // Force Language Hint
+    utterance.lang = 'en-IN'; 
+    utterance.pitch = 1.0;
     
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
     
     synthRef.current.speak(utterance);
   };
@@ -119,7 +117,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         **CORE INSTRUCTIONS:**
         1. **Language:** The user might speak in Hindi, Marathi, Kannada, or English. You must UNDERSTAND all of them (even if transcribed phonetically in English text), but **REPLY ONLY IN HINGLISH** (Hindi words using English letters).
         2. **Tone:** Very Polite. Use "Ji Sir", "Madam", "Sahab", "Hukum".
-        3. **Ordering:** If the user asks for a dish, REPEAT the item name clearly to confirm. e.g., "Ji Sir, 1 Butter Chicken add kar raha hoon."
+        3. **CRITICAL:** If the user confirms a dish or asks for a dish, you **MUST SPEAK THE FULL NAME OF THE ITEM** in your reply. e.g. "Ji Sir, 1 Butter Chicken add kar diya." DO NOT just say "Okay" or "Done".
         
         **Interaction Flow:**
         1. **Welcome:** "Namaste Sir/Madam! Shourya Wada mein swagat hai."
@@ -178,7 +176,10 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         const item = menu.find(m => m.name.toLowerCase().includes(itemName.toLowerCase()));
         if (item) {
           addToCart(item);
-          // Add a visual cue in text if needed, but the voice will confirm it
+          // Force the response to be very explicit if the AI was lazy
+          if (!displayResponse.toLowerCase().includes(item.name.toLowerCase())) {
+             displayResponse = `Ji Sir, 1 ${item.name} add kar diya hai.`;
+          }
         }
       }
 
@@ -206,14 +207,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
   const startConversation = () => {
     setIsOpen(true);
-    // Ensure voices are loaded
-    const available = window.speechSynthesis.getVoices();
-    if (available.length > 0) setVoices(available);
-
     if (messages.length === 0) {
       // Hinglish Greeting
       const intro = "Namaste Sir! Shourya Wada mein aapka swagat hai. Kya lenge aaj? Veg ya Non-Veg?";
       setMessages([{ role: 'ai', text: intro }]);
+      // Small delay to allow UI to render before speaking
       setTimeout(() => speakText(intro), 500);
     }
   };
