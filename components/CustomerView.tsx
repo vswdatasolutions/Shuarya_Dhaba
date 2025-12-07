@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MenuItem, CartItem, OrderType } from '../types';
-import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Home, Phone, Instagram, Facebook, LogOut, ChevronRight, Volume2, X, VolumeX } from 'lucide-react';
+import { MenuItem, CartItem, OrderType, Order, OrderStatus } from '../types';
+import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Home, Phone, Instagram, Facebook, LogOut, ChevronRight, Volume2, X, VolumeX, Loader2, CheckCircle } from 'lucide-react';
 import { CATEGORIES, MOCK_MENU } from '../constants';
 import { getSmartRecommendations } from '../services/geminiService';
 import { VoiceAssistant } from './VoiceAssistant';
@@ -13,9 +13,10 @@ interface CustomerViewProps {
   placeOrder: (type: OrderType, details: any) => void;
   userName: string;
   onLogout: () => void;
+  activeOrders: Order[]; // Passed from parent to show live status
 }
 
-export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCart, removeFromCart, placeOrder, userName, onLogout }) => {
+export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCart, removeFromCart, placeOrder, userName, onLogout, activeOrders }) => {
   const [activeCategory, setActiveCategory] = useState('All');
   const [view, setView] = useState<'HOME' | 'MENU' | 'CART' | 'BOOKING'>('HOME');
   const [recommendations, setRecommendations] = useState<string[]>([]);
@@ -50,34 +51,37 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
   const handlePlaceOrder = () => {
     if (cart.length === 0) return;
     placeOrder(OrderType.DELIVERY, { deliveryAddress });
-    alert("Order Placed Successfully!");
+    // Play success sound
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2013/2013-preview.mp3'); // Simple bell sound
+    audio.play().catch(e => console.log("Audio play failed", e));
+    alert("Order Successful! (ऑर्डर सफल हुआ!)");
     setView('MENU');
   };
+
+  const handleAddToCart = (item: MenuItem) => {
+    addToCart(item);
+    // Play feedback sound (click/pop)
+    const audio = new Audio('https://assets.mixkit.co/active_storage/sfx/2578/2578-preview.mp3'); 
+    audio.volume = 0.5;
+    audio.play().catch(e => console.log("Audio play failed", e));
+  }
 
   const getItemQuantity = (itemId: string) => {
     return cart.find(i => i.id === itemId)?.quantity || 0;
   };
 
   const playDishDescription = (description: string, id: string) => {
-    // If clicking same item, stop it
     if (playingAudio === id) {
         window.speechSynthesis.cancel();
         setPlayingAudio(null);
         return;
     }
 
-    // Cancel any current speech
     window.speechSynthesis.cancel();
-    
-    // Create new speech
     const utterance = new SpeechSynthesisUtterance(description);
-    
-    // Try to find a good English voice, prefer Indian English
     const voices = window.speechSynthesis.getVoices();
     const indianVoice = voices.find(v => v.lang === 'en-IN');
-    if (indianVoice) {
-        utterance.voice = indianVoice;
-    }
+    if (indianVoice) utterance.voice = indianVoice;
     
     utterance.rate = 1.0;
     utterance.pitch = 1.0;
@@ -96,11 +100,33 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
     };
   }, []);
 
+  // Live Order Status Logic
+  const latestOrder = activeOrders.length > 0 ? activeOrders[0] : null;
+  const getStatusMessage = (status: OrderStatus) => {
+    switch(status) {
+        case OrderStatus.PENDING: return { text: "Order Sent to Kitchen", color: "bg-yellow-500", icon: <Clock size={16}/> };
+        case OrderStatus.PREPARING: return { text: "Chef is Cooking...", color: "bg-blue-500", icon: <Loader2 size={16} className="animate-spin"/> };
+        case OrderStatus.READY: return { text: "Food Ready! Delivery soon.", color: "bg-green-600", icon: <CheckCircle size={16}/> };
+        default: return { text: "Preparing...", color: "bg-gray-500", icon: <Clock size={16}/> };
+    }
+  };
+
   return (
     <div className="pb-24 md:pb-0 bg-gray-50 min-h-screen font-sans flex flex-col transition-all duration-300 relative">
       
       {/* AI Voice Assistant */}
-      <VoiceAssistant menu={menu} addToCart={addToCart} />
+      <VoiceAssistant menu={menu} addToCart={handleAddToCart} onCheckout={() => setView('CART')} />
+
+      {/* Live Order Status Banner - Pinned to Top if active order */}
+      {latestOrder && view !== 'CART' && (
+         <div className={`${getStatusMessage(latestOrder.status).color} text-white px-4 py-2 flex items-center justify-between text-sm font-bold shadow-md sticky top-[60px] md:top-[68px] z-40 animate-slide-up`}>
+            <div className="flex items-center gap-2">
+                {getStatusMessage(latestOrder.status).icon}
+                <span>{getStatusMessage(latestOrder.status).text}</span>
+            </div>
+            <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded">#{latestOrder.id}</span>
+         </div>
+      )}
 
       {/* Welcome Popup */}
       {showWelcome && (
@@ -115,15 +141,15 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                  </div>
             </div>
             <div className="p-6 text-center">
-                <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Authentic Dhaba Flavors!</h2>
+                <h2 className="text-2xl font-extrabold text-gray-900 mb-2">Namaste! 🙏</h2>
                 <p className="text-gray-600 text-sm mb-6 leading-relaxed">
-                   Experience the real taste of highway dining. Use our <span className="text-orange-600 font-bold">Voice Waiter Raju</span> to order in Hindi!
+                   Authentic Dhaba food ordering is now easy. Tap the Mic button to order by voice!
                 </p>
                 <button 
                     onClick={() => setShowWelcome(false)}
                     className="w-full bg-gradient-to-r from-orange-600 to-red-600 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-orange-200 hover:shadow-xl transition-all active:scale-95"
                 >
-                    Start Ordering
+                    Order Khana (ऑर्डर करें)
                 </button>
             </div>
           </div>
@@ -139,10 +165,8 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
             <div className="flex flex-col">
                 <h1 className="text-lg md:text-xl font-extrabold text-gray-900 leading-none tracking-tight">Shourya Wada</h1>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                    <p className="text-[10px] md:text-xs font-semibold text-gray-500 uppercase tracking-wide">Dhaba & Family Restaurant</p>
-                    <span className="w-1 h-1 bg-gray-300 rounded-full"></span>
-                    <span className="text-[10px] text-green-600 font-bold flex items-center gap-0.5">
-                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> Open
+                    <span className="text-[10px] text-green-600 font-bold flex items-center gap-0.5 bg-green-50 px-1 rounded">
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full animate-pulse"></span> OPEN
                     </span>
                 </div>
             </div>
@@ -186,9 +210,9 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                 onClick={() => setView('CART')}
                 className="relative p-2 bg-orange-50 rounded-full text-orange-700 hover:text-orange-600 border border-orange-100 transition-colors"
             >
-                <ShoppingBag size={20} />
+                <ShoppingBag size={24} />
                 {cartCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold border border-white shadow-sm">
+                    <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold border border-white shadow-sm animate-bounce-slow">
                         {cartCount}
                     </span>
                 )}
@@ -201,25 +225,19 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
           {view === 'HOME' && (
               <div className="animate-fade-in pb-10">
                   {/* Hero Section */}
-                  <div className="relative w-full h-[40vh] md:h-[60vh] bg-gray-900 flex items-center justify-center overflow-hidden mb-0 md:rounded-b-3xl shadow-xl">
+                  <div className="relative w-full h-[35vh] md:h-[60vh] bg-gray-900 flex items-center justify-center overflow-hidden mb-0 md:rounded-b-3xl shadow-xl">
                       <div className="absolute inset-0 opacity-50 bg-[url('https://images.unsplash.com/photo-1517248135467-4c7edcad34c4?ixlib=rb-1.2.1&auto=format&fit=crop&w=1920&q=80')] bg-cover bg-center"></div>
                       <div className="absolute inset-0 bg-gradient-to-t from-gray-900 via-transparent to-transparent opacity-90"></div>
                       
-                      <div className="relative z-10 text-center px-6 max-w-3xl mx-auto mt-8">
+                      <div className="relative z-10 text-center px-6 max-w-3xl mx-auto mt-4">
                           <span className="text-orange-400 font-bold tracking-widest uppercase text-[10px] md:text-sm mb-3 block bg-white/10 backdrop-blur-md py-1 px-3 rounded-full inline-block mx-auto border border-white/10">Welcome, {userName}</span>
-                          <h2 className="text-3xl md:text-6xl font-extrabold text-white mb-3 leading-tight drop-shadow-lg">
+                          <h2 className="text-3xl md:text-6xl font-extrabold text-white mb-2 leading-tight drop-shadow-lg">
                              Authentic <br/> 
                              <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-yellow-400">Dhaba Flavors</span>
                           </h2>
-                          <p className="text-gray-300 mb-6 text-xs md:text-lg max-w-xl mx-auto leading-relaxed">
-                            Experience the rustic charm of highway dining. Family garden seating, pure veg options, and lightning-fast service.
-                          </p>
-                          <div className="flex flex-col md:flex-row gap-3 justify-center w-full max-w-xs md:max-w-none mx-auto">
-                              <button onClick={() => setView('MENU')} className="bg-orange-600 hover:bg-orange-700 text-white w-full md:w-auto px-8 py-3.5 rounded-full font-bold transition-all transform active:scale-95 shadow-lg shadow-orange-900/50 flex items-center justify-center gap-2">
-                                  Order Now <ArrowRight size={18} />
-                              </button>
-                              <button onClick={() => setView('BOOKING')} className="bg-white/10 hover:bg-white/20 backdrop-blur-md text-white border border-white/30 w-full md:w-auto px-8 py-3.5 rounded-full font-bold transition-all active:scale-95">
-                                  Book Table
+                          <div className="flex flex-col md:flex-row gap-3 justify-center w-full max-w-xs md:max-w-none mx-auto mt-6">
+                              <button onClick={() => setView('MENU')} className="bg-orange-600 hover:bg-orange-700 text-white w-full md:w-auto px-8 py-4 rounded-full font-bold transition-all transform active:scale-95 shadow-lg shadow-orange-900/50 flex items-center justify-center gap-2 text-lg">
+                                  ORDER FOOD <ArrowRight size={20} />
                               </button>
                           </div>
                       </div>
@@ -241,48 +259,15 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                      </div>
                   </div>
 
-                  {/* Features Section */}
-                  <div className="px-4 md:px-8 mb-8">
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-8">
-                          <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
-                              <div className="w-12 h-12 bg-orange-100 text-orange-600 rounded-full flex-shrink-0 flex items-center justify-center">
-                                  <Utensils size={24} />
-                              </div>
-                              <div>
-                                  <h3 className="font-bold text-gray-900 text-sm md:text-lg">Authentic Taste</h3>
-                                  <p className="text-gray-500 text-xs leading-snug">Clay pot cooking with farm-fresh spices.</p>
-                              </div>
-                          </div>
-                          <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
-                              <div className="w-12 h-12 bg-green-100 text-green-600 rounded-full flex-shrink-0 flex items-center justify-center">
-                                  <Clock size={24} />
-                              </div>
-                              <div>
-                                  <h3 className="font-bold text-gray-900 text-sm md:text-lg">Express Service</h3>
-                                  <p className="text-gray-500 text-xs leading-snug">Ready in 15 mins for highway travelers.</p>
-                              </div>
-                          </div>
-                          <div className="flex items-center gap-4 p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
-                              <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex-shrink-0 flex items-center justify-center">
-                                  <User size={24} />
-                              </div>
-                              <div>
-                                  <h3 className="font-bold text-gray-900 text-sm md:text-lg">Family Garden</h3>
-                                  <p className="text-gray-500 text-xs leading-snug">Open air seating with kids play area.</p>
-                              </div>
-                          </div>
-                      </div>
-                  </div>
-
                   {/* Featured Items Preview */}
                   <div className="px-4 md:px-8">
                       <div className="flex justify-between items-end mb-4 md:mb-6">
                           <div>
-                              <span className="text-orange-600 font-bold text-xs tracking-wide uppercase">Dhaba Specials</span>
-                              <h3 className="text-xl md:text-3xl font-bold text-gray-900">Customer Favorites</h3>
+                              <span className="text-orange-600 font-bold text-xs tracking-wide uppercase">Best Sellers</span>
+                              <h3 className="text-xl md:text-3xl font-bold text-gray-900">Top Dishes</h3>
                           </div>
                           <button onClick={() => setView('MENU')} className="text-orange-600 font-bold text-xs md:text-sm flex items-center gap-1 hover:gap-2 transition-all">
-                              View Menu <ChevronRight size={16} />
+                              See All <ChevronRight size={16} />
                           </button>
                       </div>
                       
@@ -309,15 +294,15 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
 
           {view === 'MENU' && (
               <div className="md:px-8 md:py-8">
-                {/* Promo Banner - Mobile Optimized */}
+                {/* Promo Banner */}
                 <div className="px-4 py-4 md:px-0">
                     <div className="bg-gradient-to-r from-gray-900 to-gray-800 rounded-2xl p-5 md:p-6 text-white shadow-xl relative overflow-hidden flex items-center justify-between">
                         <div className="relative z-10 max-w-[75%]">
                             <span className="bg-orange-500 text-[9px] md:text-[10px] font-bold px-2 py-0.5 rounded text-white mb-1.5 inline-block">TODAY'S SPECIAL</span>
                             <h2 className="text-lg md:text-2xl font-bold mb-1 leading-tight">Shourya Wada Thali</h2>
-                            <p className="text-gray-300 text-xs mb-3">Unlimited refill on rice & dal.</p>
-                            <button className="bg-white text-gray-900 px-4 py-1.5 rounded-full font-bold text-[10px] md:text-xs shadow hover:bg-gray-100 transition-colors">
-                                Order Now
+                            <p className="text-gray-300 text-xs mb-3">Full meal. Best Value.</p>
+                            <button onClick={() => addToCart(menu.find(i => i.category === 'Main Course') || menu[0])} className="bg-white text-gray-900 px-4 py-2 rounded-full font-bold text-xs shadow hover:bg-gray-100 transition-colors">
+                                Add to Order
                             </button>
                         </div>
                         <div className="w-20 h-20 md:w-28 md:h-28 rounded-full overflow-hidden border-2 border-white/20 shadow-lg flex-shrink-0">
@@ -336,7 +321,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                             </div>
                             <div className="flex gap-2 overflow-x-auto no-scrollbar pb-1">
                                 {recommendations.map((rec, i) => (
-                                    <button key={i} className="bg-white text-purple-700 text-xs font-medium px-3 py-1.5 rounded-lg shadow-sm whitespace-nowrap border border-purple-100 active:scale-95 transition-transform">
+                                    <button key={i} className="bg-white text-purple-700 text-xs font-medium px-3 py-2 rounded-lg shadow-sm whitespace-nowrap border border-purple-100 active:scale-95 transition-transform">
                                         + {rec}
                                     </button>
                                 ))}
@@ -351,7 +336,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                         <button
                             key={cat}
                             onClick={() => setActiveCategory(cat)}
-                            className={`inline-block mr-2 px-4 py-1.5 rounded-full text-xs md:text-sm font-bold transition-all shadow-sm ${
+                            className={`inline-block mr-2 px-4 py-2 rounded-full text-xs md:text-sm font-bold transition-all shadow-sm ${
                                 activeCategory === cat 
                                 ? 'bg-orange-600 text-white shadow-orange-200 ring-2 ring-orange-100 border-transparent' 
                                 : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
@@ -362,7 +347,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                     ))}
                 </div>
 
-                {/* Menu List - Psychological Design */}
+                {/* Menu List */}
                 <div className="px-4 pb-8 md:px-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
                     {filteredMenu.map(item => {
                         const qty = getItemQuantity(item.id);
@@ -380,9 +365,9 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); playDishDescription(item.description, item.id); }}
                                         className={`absolute bottom-1.5 right-1.5 p-1.5 rounded-full backdrop-blur-md transition-all shadow-sm z-20 ${playingAudio === item.id ? 'bg-orange-600 text-white animate-pulse ring-2 ring-orange-200' : 'bg-white/80 text-gray-700 hover:bg-white hover:text-orange-600'}`}
-                                        title="Hear description"
+                                        title="Listen"
                                     >
-                                        {playingAudio === item.id ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                                        {playingAudio === item.id ? <VolumeX size={16} /> : <Volume2 size={16} />}
                                     </button>
                                 </div>
                                 
@@ -398,16 +383,16 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                                         
                                         {qty === 0 ? (
                                             <button 
-                                                onClick={() => addToCart(item)}
-                                                className="bg-orange-50 text-orange-700 border border-orange-200 px-4 py-1.5 rounded-lg text-xs md:text-sm font-bold uppercase tracking-wide hover:bg-orange-600 hover:text-white transition-all active:scale-95 shadow-sm"
+                                                onClick={() => handleAddToCart(item)}
+                                                className="bg-orange-50 text-orange-700 border border-orange-200 px-4 py-2 rounded-lg text-xs md:text-sm font-bold uppercase tracking-wide hover:bg-orange-600 hover:text-white transition-all active:scale-95 shadow-sm"
                                             >
                                                 ADD +
                                             </button>
                                         ) : (
                                             <div className="flex items-center gap-3 bg-orange-600 rounded-lg px-2 py-1 shadow-md shadow-orange-200">
-                                                <button onClick={() => removeFromCart(item.id)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Minus size={14} strokeWidth={3} /></button>
-                                                <span className="text-white font-bold text-sm w-3 text-center">{qty}</span>
-                                                <button onClick={() => addToCart(item)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Plus size={14} strokeWidth={3} /></button>
+                                                <button onClick={() => removeFromCart(item.id)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Minus size={16} strokeWidth={3} /></button>
+                                                <span className="text-white font-bold text-base w-4 text-center">{qty}</span>
+                                                <button onClick={() => handleAddToCart(item)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Plus size={16} strokeWidth={3} /></button>
                                             </div>
                                         )}
                                     </div>
@@ -422,8 +407,8 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
           {view === 'CART' && (
               <div className="p-4 max-w-lg mx-auto min-h-screen bg-white md:my-8 md:rounded-2xl md:shadow-lg md:border md:border-gray-100 animate-fade-in">
                   <div className="flex items-center gap-4 mb-6 pt-2 sticky top-0 bg-white z-20 py-2">
-                    <button onClick={() => setView('MENU')} className="p-2 hover:bg-gray-100 rounded-full transition-colors border border-gray-100"><ArrowRight className="rotate-180" size={20}/></button>
-                    <h2 className="text-xl font-bold">Your Cart</h2>
+                    <button onClick={() => setView('MENU')} className="p-2 hover:bg-gray-100 rounded-full transition-colors border border-gray-100"><ArrowRight className="rotate-180" size={24}/></button>
+                    <h2 className="text-xl font-bold">Checkout</h2>
                   </div>
                   
                   {cart.length === 0 ? (
@@ -431,9 +416,8 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                           <div className="bg-orange-50 p-6 rounded-full mb-4 animate-bounce">
                             <ShoppingBag size={40} className="text-orange-300" />
                           </div>
-                          <h3 className="text-lg font-bold text-gray-800 mb-2">Hungry?</h3>
-                          <p className="text-gray-500 text-sm mb-6 max-w-[200px]">You haven't added anything to your cart yet.</p>
-                          <button onClick={() => setView('MENU')} className="bg-orange-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-orange-700 transition-colors active:scale-95">Browse Menu</button>
+                          <h3 className="text-lg font-bold text-gray-800 mb-2">Cart Empty</h3>
+                          <button onClick={() => setView('MENU')} className="bg-orange-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-orange-200 hover:bg-orange-700 transition-colors active:scale-95 mt-4">Browse Menu</button>
                       </div>
                   ) : (
                       <>
@@ -445,14 +429,14 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                                             <div className={`w-3 h-3 border border-gray-300 flex items-center justify-center rounded-sm bg-white`}>
                                                 <div className={`w-1.5 h-1.5 rounded-full ${item.isVegetarian ? 'bg-green-600' : 'bg-red-600'}`}></div>
                                             </div>
-                                            <h4 className="font-semibold text-gray-800 text-sm">{item.name}</h4>
+                                            <h4 className="font-semibold text-gray-800 text-base">{item.name}</h4>
                                         </div>
                                         <p className="text-xs text-gray-500 ml-5">₹{item.price} x {item.quantity}</p>
                                     </div>
                                     <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg p-1 shadow-sm">
-                                        <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-50 text-gray-600 active:bg-gray-200 transition-colors"><Minus size={16} /></button>
-                                        <span className="text-sm font-bold w-4 text-center text-gray-800">{item.quantity}</span>
-                                        <button onClick={() => addToCart(item)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-50 text-green-600 active:bg-gray-200 transition-colors"><Plus size={16} /></button>
+                                        <button onClick={() => removeFromCart(item.id)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-50 text-gray-600 active:bg-gray-200 transition-colors"><Minus size={18} /></button>
+                                        <span className="text-base font-bold w-4 text-center text-gray-800">{item.quantity}</span>
+                                        <button onClick={() => handleAddToCart(item)} className="w-8 h-8 flex items-center justify-center rounded hover:bg-gray-50 text-green-600 active:bg-gray-200 transition-colors"><Plus size={18} /></button>
                                     </div>
                                 </div>
                             ))}
@@ -461,36 +445,21 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                         <div className="bg-gray-50 p-4 rounded-xl mb-6 border border-gray-200">
                             <div className="flex items-center gap-2 mb-3">
                                 <MapPin size={16} className="text-orange-600" />
-                                <label className="text-xs font-bold text-gray-700 uppercase">Delivery Location</label>
+                                <label className="text-xs font-bold text-gray-700 uppercase">Delivery Location (पता)</label>
                             </div>
                             <textarea 
                                 value={deliveryAddress}
                                 onChange={(e) => setDeliveryAddress(e.target.value)}
-                                placeholder="Enter House No, Building, Landmark..."
-                                className="w-full bg-white border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-orange-200 focus:border-orange-400 outline-none transition-all placeholder-gray-400"
+                                placeholder="House No, Area..."
+                                className="w-full bg-white border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-orange-200 focus:border-orange-400 outline-none transition-all placeholder-gray-400 font-medium"
                                 rows={2}
                             />
                         </div>
 
                         <div className="border-t border-gray-100 pt-4">
-                            <div className="space-y-2 mb-4">
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Item Total</span>
-                                    <span className="font-medium">₹{cartTotal}</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Delivery Fee</span>
-                                    <span className="text-green-600 font-medium">Free</span>
-                                </div>
-                                <div className="flex justify-between text-sm">
-                                    <span className="text-gray-500">Taxes</span>
-                                    <span className="text-gray-500 font-medium">₹0</span>
-                                </div>
-                            </div>
-                            
                             <div className="flex justify-between items-center text-lg font-bold mt-2 mb-6 pt-4 border-t border-dashed border-gray-200">
-                                <span>Total Amount</span>
-                                <span className="text-orange-600 text-xl">₹{cartTotal}</span>
+                                <span>Total To Pay</span>
+                                <span className="text-orange-600 text-2xl">₹{cartTotal}</span>
                             </div>
                             
                             <button 
@@ -498,12 +467,9 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                                 disabled={!deliveryAddress}
                                 className={`w-full py-4 rounded-xl font-bold text-white shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 mb-4 ${!deliveryAddress ? 'bg-gray-300 shadow-none cursor-not-allowed' : 'bg-gray-900 hover:bg-gray-800 shadow-gray-300'}`}
                             >
-                                <span>Confirm Order</span>
-                                <ArrowRight size={18} />
+                                <span>CONFIRM ORDER</span>
+                                <ArrowRight size={20} />
                             </button>
-                            <p className="text-[10px] text-center text-gray-400 uppercase tracking-wider flex items-center justify-center gap-1">
-                                <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Secure Payment on Delivery
-                            </p>
                         </div>
                       </>
                   )}
@@ -513,14 +479,14 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
           {view === 'BOOKING' && (
               <div className="p-6 max-w-lg mx-auto bg-white min-h-screen md:my-8 md:rounded-2xl md:shadow-lg md:border md:border-gray-100 animate-fade-in">
                    <div className="mb-6">
-                        <h2 className="text-2xl font-bold text-gray-900">Book a Table</h2>
-                        <p className="text-gray-500 text-sm mt-1">Reserve your family spot at Shourya Wada</p>
+                        <h2 className="text-2xl font-bold text-gray-900">Book Table</h2>
+                        <p className="text-gray-500 text-sm mt-1">Reserve your family spot</p>
                    </div>
                    
                    <div className="space-y-5">
                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Guest Name</label>
-                            <input type="text" className="w-full bg-white border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-orange-200 outline-none" placeholder="Enter full name" 
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Name</label>
+                            <input type="text" className="w-full bg-white border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-orange-200 outline-none" placeholder="Your name" 
                                 value={bookingDetails.name} onChange={e => setBookingDetails({...bookingDetails, name: e.target.value})}
                             />
                         </div>
@@ -541,7 +507,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                         </div>
 
                         <div className="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Date & Arrival Time</label>
+                            <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Time</label>
                             <input type="datetime-local" className="w-full bg-white border border-gray-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-orange-200 outline-none"
                                 value={bookingDetails.time} onChange={e => setBookingDetails({...bookingDetails, time: e.target.value})}
                             />
@@ -549,16 +515,14 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                         
                         <button className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold mt-4 shadow-lg active:scale-95 transition-transform flex items-center justify-center gap-2">
                             <Calendar size={18} />
-                            Confirm Reservation
+                            Confirm Booking
                         </button>
-                        
-                        <p className="text-xs text-center text-gray-400 mt-2">Instant confirmation via SMS/WhatsApp.</p>
                    </div>
               </div>
           )}
       </div>
 
-      {/* Website Footer (Hidden on Mobile home/menu/cart to avoid clutter, visible on Desktop) */}
+      {/* Website Footer (Desktop) */}
       <footer className="hidden md:block bg-gray-900 text-white py-12 px-4 mt-auto">
           <div className="max-w-6xl mx-auto grid grid-cols-1 md:grid-cols-4 gap-8 mb-8">
               <div>
@@ -591,28 +555,25 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                    </button>
               </div>
           </div>
-          <div className="border-t border-gray-800 pt-8 text-center text-xs text-gray-500">
-              © 2025 Shourya Wada Restaurant. Powered by Smart Dhaba System.
-          </div>
       </footer>
 
       {/* Modern Bottom Navigation (Mobile Only) */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 flex justify-around py-3 px-2 z-50 md:hidden pb-safe shadow-[0_-5px_10px_rgba(0,0,0,0.02)]">
          <button onClick={() => setView('HOME')} className={`flex flex-col items-center gap-1 w-16 group ${view === 'HOME' ? 'text-orange-600' : 'text-gray-400'}`}>
             <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'HOME' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
-                <Home size={22} strokeWidth={view === 'HOME' ? 2.5 : 2} />
+                <Home size={24} strokeWidth={view === 'HOME' ? 2.5 : 2} />
             </div>
             <span className="text-[10px] font-bold">Home</span>
          </button>
          <button onClick={() => setView('MENU')} className={`flex flex-col items-center gap-1 w-16 group ${view === 'MENU' ? 'text-orange-600' : 'text-gray-400'}`}>
             <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'MENU' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
-                <Utensils size={22} strokeWidth={view === 'MENU' ? 2.5 : 2} />
+                <Utensils size={24} strokeWidth={view === 'MENU' ? 2.5 : 2} />
             </div>
             <span className="text-[10px] font-bold">Menu</span>
          </button>
          <button onClick={() => setView('CART')} className={`flex flex-col items-center gap-1 w-16 group relative ${view === 'CART' ? 'text-orange-600' : 'text-gray-400'}`}>
             <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'CART' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
-                <ShoppingBag size={22} strokeWidth={view === 'CART' ? 2.5 : 2} />
+                <ShoppingBag size={24} strokeWidth={view === 'CART' ? 2.5 : 2} />
             </div>
             <span className="text-[10px] font-bold">Cart</span>
             {cartCount > 0 && view !== 'CART' && (
@@ -621,7 +582,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
          </button>
          <button onClick={() => setView('BOOKING')} className={`flex flex-col items-center gap-1 w-16 group ${view === 'BOOKING' ? 'text-orange-600' : 'text-gray-400'}`}>
             <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'BOOKING' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
-                <Calendar size={22} strokeWidth={view === 'BOOKING' ? 2.5 : 2} />
+                <Calendar size={24} strokeWidth={view === 'BOOKING' ? 2.5 : 2} />
             </div>
             <span className="text-[10px] font-bold">Book</span>
          </button>

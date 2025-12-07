@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, MessageSquare, Loader2, Volume2 } from 'lucide-react';
+import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, ShoppingBag } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MenuItem } from '../types';
 
 interface VoiceAssistantProps {
   menu: MenuItem[];
   addToCart: (item: MenuItem) => void;
+  onCheckout: () => void;
 }
 
-export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart }) => {
+export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart, onCheckout }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -55,7 +56,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
       recognitionRef.current = new SpeechRecognition();
       recognitionRef.current.continuous = false;
       recognitionRef.current.interimResults = false;
-      recognitionRef.current.lang = 'en-IN'; // Indian English handles Hindi accents better for mixed speech
+      // We use Indian English as the base because it often captures regional accents and Hinglish better than strict en-US
+      recognitionRef.current.lang = 'en-IN'; 
 
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
@@ -81,18 +83,18 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
 
     const utterance = new SpeechSynthesisUtterance(text);
     
-    // Priority: Google Hindi -> Microsoft Hindi -> Indian English -> Default
-    // Many Android phones have "Google Hindi" installed
+    // Priority: Indian English (Best for Hinglish/Roman Script) -> Hindi -> Default
+    // We prioritize en-IN because pure hi-IN voices often spell out Roman script text letter by letter.
+    const indianEnglishVoice = voices.find(v => v.lang === 'en-IN' || v.lang.includes('en_IN'));
     const hindiVoice = voices.find(v => v.lang.includes('hi') || v.name.toLowerCase().includes('hindi'));
-    const indianEnglishVoice = voices.find(v => v.lang === 'en-IN');
     
-    if (hindiVoice) {
+    if (indianEnglishVoice) {
+        utterance.voice = indianEnglishVoice;
+        utterance.rate = 0.95; // Slightly slower for better clarity
+        utterance.pitch = 1.0;
+    } else if (hindiVoice) {
         utterance.voice = hindiVoice;
         utterance.rate = 1.0; 
-        utterance.pitch = 1.0;
-    } else if (indianEnglishVoice) {
-        utterance.voice = indianEnglishVoice;
-        utterance.rate = 0.9;
     }
     
     utterance.onstart = () => setIsSpeaking(true);
@@ -110,27 +112,35 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
       
       const menuContext = menu.map(m => `${m.name} (${m.category}, ₹${m.price}, ${m.isVegetarian ? 'Veg' : 'Non-Veg'})`).join(', ');
       
-      // Highly specific prompt for the "Raju" Dhaba Waiter Persona
+      // Hinglish Raju Persona
       const systemPrompt = `
         You are 'Raju', an experienced, friendly, and authentic waiter at 'Shourya Wada Dhaba'.
         
-        **Language:** Speak in mixed **Hindi (using Roman script)** and English (Hinglish).
+        **CORE INSTRUCTION:** Speak in **Hinglish** (Hindi words using English letters).
         
-        **Goal:** Help the customer order food by asking preferences first, then suggesting items.
+        **Tone:** Friendly, Respectful, Desi.
+        
+        **Language Style Examples:**
+        - "Namaste Sir/Madam! Aaj kya order karenge?"
+        - "Dal Tadka bahut badhiya hai aaj."
+        - "Thoda spicy banau kya?"
+        - "Aur kuch chahiye?"
 
-        **Strict Interaction Flow:**
-        1. **Preference Check:** If the user hasn't specified, ask "Veg ya Non-Veg lenge sir?"
-        2. **Category Check:** If Veg/Non-Veg is known but dish isn't, ask "Rice, Roti ya Starters?"
-        3. **Suggestion:** Suggest 2-3 specific popular items from the menu provided below based on their choice. Describe them appetizingly in 5-6 words.
-        4. **Order Taking:** If they confirm a dish, say "Ji Sir, [Dish Name] add kar diya." and output the tag [ORDER: ItemName].
+        **Interaction Flow:**
+        1. **Preference:** Ask "Veg ya Non-Veg?" if unknown.
+        2. **Carb Check:** Ask "Roti ya Rice?" if dish is decided.
+        3. **Suggest:** Recommend 2 items based on preference.
+        
+        **Actions:**
+        - If user confirms a dish, output tag: [ORDER: ItemName].
+        - If user says "Book Order", "Checkout", "Bill", "Bus", "Done", "Order maadi", "Enough", output tag: [ACTION: CHECKOUT].
 
         **Menu Context:** ${menuContext}
         
         **Rules:**
-        - Keep responses short (max 30 words).
-        - Be polite ("Namaste", "Ji Sir", "Badhiya choice hai").
-        - If user asks "What is special?", suggest 'Butter Chicken' or 'Dal Khichdi'.
-        
+        - Keep responses short (max 20 words).
+        - Use Roman Script ONLY (No Devanagari).
+
         **Current User Input:** ${text}
       `;
 
@@ -144,7 +154,24 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
 
       const aiResponse = response.text.trim();
       
-      // Parse Order Tag
+      // 1. Check for Checkout Action
+      if (aiResponse.includes('[ACTION: CHECKOUT]')) {
+        const cleanResponse = aiResponse.replace(/\[ACTION: CHECKOUT\]/g, '').replace(/\[ORDER: .*?\]/g, '').trim();
+        const finalMsg = cleanResponse || "Ji Sir, main bill ready karta hoon.";
+        
+        setMessages(prev => [...prev, { role: 'ai', text: finalMsg }]);
+        speakText(finalMsg);
+        
+        setTimeout(() => {
+            setIsOpen(false);
+            onCheckout();
+        }, 2000);
+        
+        setIsProcessing(false);
+        return;
+      }
+
+      // 2. Check for Order Tag
       const orderMatch = aiResponse.match(/\[ORDER: (.*?)\]/);
       let displayResponse = aiResponse.replace(/\[ORDER: .*?\]/, '').trim();
 
@@ -154,6 +181,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
         const item = menu.find(m => m.name.toLowerCase().includes(itemName.toLowerCase()));
         if (item) {
           addToCart(item);
+          // Add a visual cue in text if needed, but the voice will confirm it
         }
       }
 
@@ -162,7 +190,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
 
     } catch (error) {
       console.error("AI Error:", error);
-      const fallback = "Maaf kijiye sir, network slow hai. Kya aap menu se select karenge?";
+      const fallback = "Network slow hai sir. Please menu se order karein.";
       setMessages(prev => [...prev, { role: 'ai', text: fallback }]);
       speakText(fallback);
     } finally {
@@ -186,25 +214,25 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
     if (available.length > 0) setVoices(available);
 
     if (messages.length === 0) {
-      const intro = "Namaste! Main Raju. Shourya Wada mein swagat hai. Aaj kya khayenge - Veg ya Non-Veg?";
+      // Hinglish Greeting
+      const intro = "Namaste! Shourya Wada mein swagat hai. Veg ya Non-Veg?";
       setMessages([{ role: 'ai', text: intro }]);
-      // Small delay to ensure modal transition finishes before speaking
       setTimeout(() => speakText(intro), 500);
     }
   };
 
   return (
     <>
-      {/* Floating Mic Button */}
+      {/* Floating Mic Button - Huge for Mobile */}
       <button 
         onClick={startConversation}
-        className="fixed bottom-24 right-4 md:bottom-20 z-[60] bg-gradient-to-r from-orange-600 to-red-600 text-white p-4 rounded-full shadow-lg shadow-orange-500/50 hover:scale-110 transition-transform animate-bounce-slow border-2 border-white group"
+        className="fixed bottom-24 right-4 md:bottom-20 z-[60] bg-gradient-to-r from-orange-600 to-red-600 text-white p-5 rounded-full shadow-lg shadow-orange-500/50 hover:scale-110 transition-transform animate-bounce-slow border-4 border-white group active:scale-95"
         aria-label="Talk to AI Waiter"
       >
         <div className="absolute -top-10 right-0 bg-white text-gray-900 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none transform translate-y-2 group-hover:translate-y-0">
-            Order by Voice 🎙️
+            Order Voice 🎙️
         </div>
-        <Mic size={28} />
+        <Mic size={32} />
       </button>
 
       {/* Chat Interface Modal */}
@@ -216,18 +244,18 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
             <div className="bg-gradient-to-r from-orange-600 to-red-600 p-4 flex justify-between items-center text-white shadow-md">
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full border border-white/20 backdrop-blur-md">
-                  <MessageSquare size={20} />
+                  <MessageSquare size={24} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-lg leading-tight">Raju - Digital Waiter</h3>
-                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">Hindi Voice Ordering</p>
+                  <h3 className="font-bold text-xl leading-tight">Raju (Waiter)</h3>
+                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">Hinglish • Voice Order</p>
                 </div>
               </div>
               <button 
                 onClick={() => { setIsOpen(false); synthRef.current.cancel(); }} 
-                className="p-1.5 hover:bg-white/20 rounded-full transition-colors"
+                className="p-2 hover:bg-white/20 rounded-full transition-colors"
               >
-                <X size={20} />
+                <X size={28} />
               </button>
             </div>
 
@@ -235,7 +263,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
             <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-orange-50/30 min-h-[300px]">
               {messages.map((msg, idx) => (
                 <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}>
-                  <div className={`max-w-[85%] p-3.5 rounded-2xl text-sm leading-relaxed shadow-sm ${
+                  <div className={`max-w-[85%] p-4 rounded-2xl text-base font-medium leading-relaxed shadow-sm ${
                     msg.role === 'user' 
                     ? 'bg-gray-800 text-white rounded-br-none' 
                     : 'bg-white text-gray-800 border border-gray-100 rounded-bl-none'
@@ -249,14 +277,14 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
                 <div className="flex justify-start animate-fade-in">
                    <div className="bg-white p-3 rounded-2xl rounded-bl-none shadow-sm border border-gray-100 flex items-center gap-2.5">
                       <Loader2 size={16} className="animate-spin text-orange-600" />
-                      <span className="text-xs text-gray-500 font-medium italic">Soch raha hoon...</span>
+                      <span className="text-xs text-gray-500 font-medium italic">Sun raha hoon...</span>
                    </div>
                 </div>
               )}
               <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })}></div>
             </div>
 
-            {/* Mic Control Area */}
+            {/* Mic Control Area - Massive Button for easier clicking */}
             <div className="p-6 bg-white border-t border-gray-100 flex flex-col items-center gap-4 relative">
                {/* Status Pill */}
                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-sm text-[10px] font-bold text-gray-500 flex items-center gap-2">
@@ -273,20 +301,35 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart 
                   )}
                </div>
 
-               <button 
-                onClick={toggleListening}
-                disabled={isProcessing}
-                className={`p-6 rounded-full transition-all duration-300 transform ${
-                  isListening 
-                  ? 'bg-red-50 text-red-600 ring-4 ring-red-100 scale-110 shadow-inner' 
-                  : 'bg-gradient-to-br from-gray-900 to-gray-800 text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95'
-                }`}
-               >
-                 {isListening ? <MicOff size={32} /> : <Mic size={32} />}
-               </button>
+               <div className="flex items-center gap-4 w-full justify-center">
+                    <button 
+                        onClick={toggleListening}
+                        disabled={isProcessing}
+                        className={`p-6 rounded-full transition-all duration-300 transform ${
+                        isListening 
+                        ? 'bg-red-50 text-red-600 ring-4 ring-red-100 scale-110 shadow-inner' 
+                        : 'bg-gradient-to-br from-gray-900 to-gray-800 text-white shadow-xl hover:shadow-2xl hover:scale-105 active:scale-95'
+                        }`}
+                        style={{ width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        {isListening ? <MicOff size={36} /> : <Mic size={36} />}
+                    </button>
+
+                    <button 
+                        onClick={() => {
+                            setIsOpen(false);
+                            onCheckout();
+                        }}
+                        className="absolute right-6 p-4 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors flex flex-col items-center gap-1 shadow-md"
+                        title="Go to Checkout"
+                    >
+                        <ShoppingBag size={24} />
+                        <span className="text-[10px] font-bold">BILL</span>
+                    </button>
+               </div>
                
-               <p className="text-xs text-gray-400 text-center max-w-[200px]">
-                 {isListening ? "Boliye sir..." : "Tap mic and say 'Veg main kya hai?'"}
+               <p className="text-sm font-semibold text-gray-400 text-center max-w-[200px]">
+                 {isListening ? "Boliye..." : "Tap & Speak"}
                </p>
             </div>
           </div>
