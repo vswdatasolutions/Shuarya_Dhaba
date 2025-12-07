@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { MenuItem, CartItem, OrderType, Order, OrderStatus } from '../types';
-import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Phone, LogOut, Volume2, X, VolumeX, Loader2, CheckCircle, Smartphone, CreditCard } from 'lucide-react';
-import { CATEGORIES, MOCK_MENU } from '../constants';
+import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Phone, LogOut, Volume2, X, VolumeX, Loader2, CheckCircle, Smartphone, CreditCard, Wallet, Settings, History, ChevronRight } from 'lucide-react';
+import { CATEGORIES, MOCK_MENU, MOCK_PAST_ORDERS } from '../constants';
 import { getSmartRecommendations } from '../services/geminiService';
 import { VoiceAssistant } from './VoiceAssistant';
 
@@ -18,13 +18,18 @@ interface CustomerViewProps {
 
 export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCart, removeFromCart, placeOrder, userName, onLogout, activeOrders }) => {
   const [activeCategory, setActiveCategory] = useState('All');
-  // Default view is now MENU, removed HOME
-  const [view, setView] = useState<'MENU' | 'CART' | 'BOOKING' | 'PAYMENT_PROCESSING'>('MENU');
+  // Navigation State
+  const [view, setView] = useState<'MENU' | 'CART' | 'BOOKING' | 'PAYMENT_PROCESSING' | 'ORDERS' | 'PROFILE'>('MENU');
+  
   const [recommendations, setRecommendations] = useState<string[]>([]);
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [bookingDetails, setBookingDetails] = useState({ name: userName || '', people: 2, time: '' });
   const [playingAudio, setPlayingAudio] = useState<string | null>(null);
   const [paymentStep, setPaymentStep] = useState<'SELECT' | 'PROCESSING' | 'SUCCESS'>('SELECT');
+  const [userProfile, setUserProfile] = useState({ name: userName, email: 'user@example.com', mobile: '9876543210' });
+  
+  // Live Kitchen Activity Simulation State
+  const [kitchenActivity, setKitchenActivity] = useState("Order received by Kitchen...");
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const cartCount = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -34,6 +39,32 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
     const itemNames = cart.map(c => c.name);
     getSmartRecommendations(itemNames).then(recs => setRecommendations(recs));
   }, [cart.length]);
+
+  // Live Kitchen Activity Updates
+  useEffect(() => {
+    const activities = [
+        "Chef is chopping fresh vegetables 🥬",
+        "Marinating with secret spices 🍗",
+        "Tandoor is heating up to 400°C 🔥",
+        "Chef Raju is preparing the gravy 🥘",
+        "Garnishing with fresh coriander 🌿",
+        "Quality check in progress ✅",
+        "Packing your order with care ❤️"
+    ];
+    
+    // Only run if there is an active order in preparing state
+    const hasPreparingOrder = activeOrders.some(o => o.status === OrderStatus.PREPARING);
+    
+    if (hasPreparingOrder) {
+        const interval = setInterval(() => {
+            const random = activities[Math.floor(Math.random() * activities.length)];
+            setKitchenActivity(random);
+        }, 4000);
+        return () => clearInterval(interval);
+    } else {
+        setKitchenActivity("Waiting for update...");
+    }
+  }, [activeOrders]);
 
   const filteredMenu = activeCategory === 'All' 
     ? menu 
@@ -52,10 +83,9 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
         
         setTimeout(() => {
             placeOrder(OrderType.DELIVERY, { deliveryAddress });
-            setView('MENU');
             setPaymentStep('SELECT');
             setDeliveryAddress('');
-            alert(`Order Placed! Payment of ₹${cartTotal} Successful.`);
+            setView('ORDERS'); // Go to Orders page after payment
         }, 2000);
     }, 3000);
   };
@@ -87,7 +117,6 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
     
     // Robust voice selection
     const voices = window.speechSynthesis.getVoices();
-    // Try to find Indian English, then Hindi, then UK English
     const preferredVoice = voices.find(v => v.lang === 'en-IN' || v.lang.includes('en_IN')) ||
                            voices.find(v => v.lang === 'hi-IN' || v.lang.includes('hi')) ||
                            voices.find(v => v.lang === 'en-GB');
@@ -96,9 +125,8 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
         utterance.voice = preferredVoice;
     }
     
-    // Set lang hint to Indian English for better pronunciation of Indian names
     utterance.lang = 'en-IN';
-    utterance.rate = 0.9; // Slightly slower for clarity
+    utterance.rate = 0.9; 
     utterance.pitch = 1.0;
     
     utterance.onstart = () => setPlayingAudio(id);
@@ -129,17 +157,24 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
     <div className="pb-24 md:pb-0 bg-gray-50 min-h-screen font-sans flex flex-col transition-all duration-300 relative">
       
       {/* AI Voice Assistant */}
-      <VoiceAssistant menu={menu} addToCart={handleAddToCart} onCheckout={() => setView('CART')} />
+      <VoiceAssistant 
+        menu={menu} 
+        addToCart={handleAddToCart} 
+        onCheckout={() => setView('CART')} 
+        onBooking={() => setView('BOOKING')}
+      />
 
       {/* Live Order Status Banner */}
-      {latestOrder && view !== 'CART' && (
-         <div className={`${getStatusMessage(latestOrder.status).color} text-white px-4 py-2 flex items-center justify-between text-sm font-bold shadow-md sticky top-[60px] md:top-[68px] z-40 animate-slide-up`}>
+      {latestOrder && view !== 'CART' && view !== 'ORDERS' && (
+         <button onClick={() => setView('ORDERS')} className={`${getStatusMessage(latestOrder.status).color} text-white px-4 py-2 flex items-center justify-between text-sm font-bold shadow-md sticky top-[60px] md:top-[68px] z-40 animate-slide-up w-full`}>
             <div className="flex items-center gap-2">
                 {getStatusMessage(latestOrder.status).icon}
                 <span>{getStatusMessage(latestOrder.status).text}</span>
             </div>
-            <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded">#{latestOrder.id}</span>
-         </div>
+            <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded flex items-center gap-1">
+                Track <ChevronRight size={10} />
+            </span>
+         </button>
       )}
 
       {/* Universal Header */}
@@ -161,18 +196,12 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
         {/* Desktop Navigation */}
         <nav className="hidden md:flex items-center gap-8">
             <button onClick={() => setView('MENU')} className={`font-semibold text-sm ${view === 'MENU' ? 'text-orange-600' : 'text-gray-600 hover:text-orange-500'}`}>Order Online</button>
+            <button onClick={() => setView('ORDERS')} className={`font-semibold text-sm ${view === 'ORDERS' ? 'text-orange-600' : 'text-gray-600 hover:text-orange-500'}`}>My Orders</button>
             <button onClick={() => setView('BOOKING')} className={`font-semibold text-sm ${view === 'BOOKING' ? 'text-orange-600' : 'text-gray-600 hover:text-orange-500'}`}>Book Table</button>
             <div className="h-6 w-px bg-gray-200 mx-2"></div>
-            <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-500">Hi, {userName.split(' ')[0]}</span>
-                <button 
-                    onClick={onLogout}
-                    className="p-2 hover:bg-gray-100 rounded-full text-gray-500 transition-colors"
-                    title="Logout"
-                >
-                    <LogOut size={16} />
-                </button>
-            </div>
+            <button onClick={() => setView('PROFILE')} className={`flex items-center gap-2 font-semibold text-sm ${view === 'PROFILE' ? 'text-orange-600' : 'text-gray-600 hover:text-orange-500'}`}>
+                <User size={16} /> {userName.split(' ')[0]}
+            </button>
             <button 
                 onClick={() => setView('CART')}
                 className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-full hover:bg-gray-800 transition-colors shadow-lg shadow-gray-200"
@@ -185,12 +214,6 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
 
         {/* Mobile Cart Toggle */}
         <div className="flex items-center gap-3 md:hidden">
-            <button 
-                onClick={onLogout}
-                className="p-2 bg-gray-50 rounded-full text-gray-700 hover:text-red-600 transition-colors border border-gray-100"
-            >
-                <LogOut size={18} />
-            </button>
             <button 
                 onClick={() => setView('CART')}
                 className="relative p-2 bg-orange-50 rounded-full text-orange-700 hover:text-orange-600 border border-orange-100 transition-colors"
@@ -274,7 +297,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                                             <div className={`w-1.5 h-1.5 rounded-full ${item.isVegetarian ? 'bg-green-600' : 'bg-red-600'}`}></div>
                                         </div>
                                     </div>
-                                    {/* Audio Description Button - Now reads Name + Desc */}
+                                    {/* Audio Description Button */}
                                     <button 
                                         onClick={(e) => { e.stopPropagation(); playDishDescription(item.name, item.description, item.id); }}
                                         className={`absolute bottom-1.5 right-1.5 p-1.5 rounded-full backdrop-blur-md transition-all shadow-sm z-20 ${playingAudio === item.id ? 'bg-orange-600 text-white animate-pulse ring-2 ring-orange-200' : 'bg-white/80 text-gray-700 hover:bg-white hover:text-orange-600'}`}
@@ -314,6 +337,147 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                         );
                     })}
                 </div>
+              </div>
+          )}
+
+          {view === 'ORDERS' && (
+              <div className="p-4 md:p-8 max-w-2xl mx-auto min-h-screen bg-white md:bg-gray-50 animate-fade-in">
+                  <h2 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                      <History className="text-orange-600" /> My Orders
+                  </h2>
+
+                  {/* Active Orders */}
+                  {activeOrders.length > 0 && (
+                      <div className="mb-8">
+                          <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Live Orders</h3>
+                          {activeOrders.map(order => (
+                              <div key={order.id} className="bg-white p-5 rounded-2xl shadow-lg border border-orange-100 mb-4 relative overflow-hidden transition-all">
+                                  {/* Progress Bar Background */}
+                                  <div className={`absolute top-0 left-0 h-1 bg-green-500 transition-all duration-1000 ${
+                                      order.status === OrderStatus.PENDING ? 'w-1/3' : 
+                                      order.status === OrderStatus.PREPARING ? 'w-2/3' : 'w-full'
+                                  }`}></div>
+                                  
+                                  <div className="flex justify-between items-start mb-4">
+                                      <div>
+                                          <p className="text-xs text-orange-600 font-bold mb-1">#{order.id}</p>
+                                          <h4 className="font-bold text-lg text-gray-900">{order.items.map(i => i.name).join(', ').substring(0, 20)}...</h4>
+                                      </div>
+                                      <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                                          order.status === OrderStatus.READY ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                                      }`}>
+                                          {order.status === OrderStatus.READY ? 'Ready' : 'In Progress'}
+                                      </span>
+                                  </div>
+
+                                  {/* Real-time Kitchen Updates */}
+                                  {order.status === OrderStatus.PREPARING && (
+                                    <div className="bg-blue-50 border border-blue-100 p-2 rounded-lg mb-4 flex items-center gap-2 animate-fade-in">
+                                        <Loader2 size={14} className="text-blue-600 animate-spin" />
+                                        <p className="text-xs font-semibold text-blue-800 transition-all">{kitchenActivity}</p>
+                                    </div>
+                                  )}
+
+                                  {/* Stepper */}
+                                  <div className="flex justify-between items-center text-[10px] md:text-xs font-bold text-gray-400 mt-2 relative">
+                                      {/* Connecting Line */}
+                                      <div className="absolute top-1/2 left-0 w-full h-0.5 bg-gray-100 -z-10"></div>
+                                      
+                                      <div className={`flex flex-col items-center gap-1 bg-white px-2 ${order.status !== OrderStatus.CANCELLED ? 'text-green-600' : ''}`}>
+                                          <div className={`w-3 h-3 rounded-full ${order.status !== OrderStatus.CANCELLED ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                                          <span>Sent</span>
+                                      </div>
+                                      <div className={`flex flex-col items-center gap-1 bg-white px-2 ${[OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.DELIVERED].includes(order.status) ? 'text-green-600' : ''}`}>
+                                          <div className={`w-3 h-3 rounded-full ${[OrderStatus.PREPARING, OrderStatus.READY, OrderStatus.DELIVERED].includes(order.status) ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                                          <span>Cooking</span>
+                                      </div>
+                                      <div className={`flex flex-col items-center gap-1 bg-white px-2 ${[OrderStatus.READY, OrderStatus.DELIVERED].includes(order.status) ? 'text-green-600' : ''}`}>
+                                          <div className={`w-3 h-3 rounded-full ${[OrderStatus.READY, OrderStatus.DELIVERED].includes(order.status) ? 'bg-green-600' : 'bg-gray-200'}`}></div>
+                                          <span>Ready</span>
+                                      </div>
+                                  </div>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+
+                  {/* Past Orders */}
+                  <div>
+                      <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Past Orders</h3>
+                      <div className="space-y-3">
+                          {[...MOCK_PAST_ORDERS].map(order => (
+                              <div key={order.id} className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm flex justify-between items-center opacity-80 hover:opacity-100 transition-opacity">
+                                  <div>
+                                      <p className="font-bold text-gray-800">{order.items[0].name} {order.items.length > 1 && `+ ${order.items.length - 1} more`}</p>
+                                      <p className="text-xs text-gray-500 mt-1">{new Date(order.timestamp).toDateString()} • ₹{order.totalAmount}</p>
+                                  </div>
+                                  <button onClick={() => {
+                                      order.items.forEach(i => addToCart(i));
+                                      setView('CART');
+                                  }} className="text-orange-600 text-xs font-bold bg-orange-50 px-3 py-2 rounded-lg hover:bg-orange-100">
+                                      REORDER
+                                  </button>
+                              </div>
+                          ))}
+                      </div>
+                  </div>
+              </div>
+          )}
+
+          {view === 'PROFILE' && (
+              <div className="p-4 md:p-8 max-w-lg mx-auto min-h-screen bg-white md:bg-gray-50 animate-fade-in">
+                  <div className="flex items-center gap-4 mb-8">
+                      <div className="w-16 h-16 bg-gray-200 rounded-full flex items-center justify-center text-gray-500 text-2xl font-bold">
+                          {userProfile.name.charAt(0)}
+                      </div>
+                      <div>
+                          <h2 className="text-2xl font-bold text-gray-900">{userProfile.name}</h2>
+                          <p className="text-gray-500 text-sm">+91 {userProfile.mobile}</p>
+                      </div>
+                  </div>
+
+                  {/* Wallet Card */}
+                  <div className="bg-gradient-to-r from-gray-900 to-gray-800 text-white p-6 rounded-2xl shadow-xl mb-6 flex justify-between items-center">
+                      <div>
+                          <p className="text-gray-400 text-xs font-bold uppercase mb-1">Dhaba Wallet</p>
+                          <h3 className="text-3xl font-bold">₹0.00</h3>
+                      </div>
+                      <div className="bg-white/10 p-3 rounded-full">
+                          <Wallet size={24} />
+                      </div>
+                  </div>
+
+                  {/* Settings List */}
+                  <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                      <div className="p-4 border-b border-gray-50 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
+                          <MapPin size={20} className="text-gray-400" />
+                          <div className="flex-1">
+                              <p className="font-bold text-gray-800 text-sm">Saved Addresses</p>
+                              <p className="text-xs text-gray-400">Manage delivery locations</p>
+                          </div>
+                          <ChevronRight size={16} className="text-gray-300" />
+                      </div>
+                      <div className="p-4 border-b border-gray-50 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
+                          <Settings size={20} className="text-gray-400" />
+                          <div className="flex-1">
+                              <p className="font-bold text-gray-800 text-sm">Account Settings</p>
+                              <p className="text-xs text-gray-400">Notifications, Language</p>
+                          </div>
+                          <ChevronRight size={16} className="text-gray-300" />
+                      </div>
+                      <div className="p-4 flex items-center gap-3 hover:bg-gray-50 cursor-pointer">
+                          <Phone size={20} className="text-gray-400" />
+                          <div className="flex-1">
+                              <p className="font-bold text-gray-800 text-sm">Help & Support</p>
+                              <p className="text-xs text-gray-400">Call us for issues</p>
+                          </div>
+                          <ChevronRight size={16} className="text-gray-300" />
+                      </div>
+                  </div>
+
+                  <button onClick={onLogout} className="w-full mt-8 border border-red-200 text-red-600 font-bold py-3 rounded-xl hover:bg-red-50 flex items-center justify-center gap-2">
+                      <LogOut size={18} /> Logout
+                  </button>
               </div>
           )}
 
@@ -491,26 +655,42 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
 
       {/* Modern Bottom Navigation (Mobile Only) */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 flex justify-around py-3 px-2 z-50 md:hidden pb-safe shadow-[0_-5px_10px_rgba(0,0,0,0.02)]">
-         <button onClick={() => setView('MENU')} className={`flex flex-col items-center gap-1 w-16 group ${view === 'MENU' ? 'text-orange-600' : 'text-gray-400'}`}>
+         <button onClick={() => setView('MENU')} className={`flex flex-col items-center gap-1 w-14 group ${view === 'MENU' ? 'text-orange-600' : 'text-gray-400'}`}>
             <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'MENU' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
-                <Utensils size={24} strokeWidth={view === 'MENU' ? 2.5 : 2} />
+                <Utensils size={22} strokeWidth={view === 'MENU' ? 2.5 : 2} />
             </div>
-            <span className="text-[10px] font-bold">Menu</span>
+            <span className="text-[9px] font-bold">Menu</span>
          </button>
-         <button onClick={() => setView('CART')} className={`flex flex-col items-center gap-1 w-16 group relative ${view === 'CART' ? 'text-orange-600' : 'text-gray-400'}`}>
-            <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'CART' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
-                <ShoppingBag size={24} strokeWidth={view === 'CART' ? 2.5 : 2} />
+         
+         <button onClick={() => setView('ORDERS')} className={`flex flex-col items-center gap-1 w-14 group ${view === 'ORDERS' ? 'text-orange-600' : 'text-gray-400'}`}>
+            <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'ORDERS' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
+                <History size={22} strokeWidth={view === 'ORDERS' ? 2.5 : 2} />
             </div>
-            <span className="text-[10px] font-bold">Cart</span>
-            {cartCount > 0 && view !== 'CART' && (
-                <span className="absolute top-1 right-2 w-2.5 h-2.5 bg-red-500 rounded-full border border-white animate-pulse"></span>
-            )}
+            <span className="text-[9px] font-bold">Orders</span>
          </button>
-         <button onClick={() => setView('BOOKING')} className={`flex flex-col items-center gap-1 w-16 group ${view === 'BOOKING' ? 'text-orange-600' : 'text-gray-400'}`}>
+
+         {/* Floating Cart Button (Center) */}
+         <button onClick={() => setView('CART')} className="relative -top-5 bg-gray-900 text-white p-4 rounded-full shadow-xl shadow-gray-400/40 transform transition-transform active:scale-95">
+             <ShoppingBag size={24} />
+             {cartCount > 0 && (
+                <span className="absolute top-0 right-0 bg-red-600 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full font-bold border-2 border-white">
+                    {cartCount}
+                </span>
+             )}
+         </button>
+
+         <button onClick={() => setView('BOOKING')} className={`flex flex-col items-center gap-1 w-14 group ${view === 'BOOKING' ? 'text-orange-600' : 'text-gray-400'}`}>
             <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'BOOKING' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
-                <Calendar size={24} strokeWidth={view === 'BOOKING' ? 2.5 : 2} />
+                <Calendar size={22} strokeWidth={view === 'BOOKING' ? 2.5 : 2} />
             </div>
-            <span className="text-[10px] font-bold">Book</span>
+            <span className="text-[9px] font-bold">Book</span>
+         </button>
+         
+         <button onClick={() => setView('PROFILE')} className={`flex flex-col items-center gap-1 w-14 group ${view === 'PROFILE' ? 'text-orange-600' : 'text-gray-400'}`}>
+            <div className={`p-1.5 rounded-2xl transition-all duration-300 ${view === 'PROFILE' ? 'bg-orange-50 translate-y-[-2px]' : 'bg-transparent'}`}>
+                <User size={22} strokeWidth={view === 'PROFILE' ? 2.5 : 2} />
+            </div>
+            <span className="text-[9px] font-bold">Profile</span>
          </button>
       </nav>
     </div>

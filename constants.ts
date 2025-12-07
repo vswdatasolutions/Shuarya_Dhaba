@@ -161,4 +161,32 @@ export const MOCK_ORDERS: Order[] = [
   }
 ];
 
+export const MOCK_PAST_ORDERS: Order[] = [
+  {
+    id: 'ORD-HIST-01',
+    customerName: 'Rahul Kumar',
+    items: [
+      { ...MOCK_MENU[0], quantity: 2 },
+      { ...MOCK_MENU[9], quantity: 4 }
+    ],
+    totalAmount: 1000,
+    status: OrderStatus.DELIVERED,
+    type: OrderType.DELIVERY,
+    timestamp: Date.now() - 1000 * 60 * 60 * 24 * 2, // 2 days ago
+    deliveryAddress: 'Sector 4, Wada'
+  },
+  {
+    id: 'ORD-HIST-02',
+    customerName: 'Rahul Kumar',
+    items: [
+      { ...MOCK_MENU[5], quantity: 1 },
+      { ...MOCK_MENU[8], quantity: 1 }
+    ],
+    totalAmount: 570,
+    status: OrderStatus.DELIVERED,
+    type: OrderType.DINE_IN,
+    timestamp: Date.now() - 1000 * 60 * 60 * 24 * 5 // 5 days ago
+  }
+];
+
 export const CATEGORIES = ['All', 'Starters', 'Main Course', 'Breads', 'Rice', 'Beverages'];

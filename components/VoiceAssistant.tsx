@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, ShoppingBag } from 'lucide-react';
+import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, ShoppingBag, Calendar } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MenuItem } from '../types';
 
@@ -7,17 +7,22 @@ interface VoiceAssistantProps {
   menu: MenuItem[];
   addToCart: (item: MenuItem) => void;
   onCheckout: () => void;
+  onBooking: () => void;
 }
 
-export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart, onCheckout }) => {
+interface AIResponse {
+  response: string;
+  action: 'ADD_TO_CART' | 'CHECKOUT' | 'NAVIGATE_BOOKING' | 'NONE';
+  item?: string;
+  quantity?: number;
+}
+
+export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart, onCheckout, onBooking }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [messages, setMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
-  // We don't rely on 'voices' state for the speak function anymore to avoid stale/empty state on mobile
-  // But we keep it to trigger re-renders if needed
-  const [voicesLoaded, setVoicesLoaded] = useState(false);
   
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
@@ -29,8 +34,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   // Load Voices trigger
   useEffect(() => {
     const loadVoices = () => {
-      const vs = window.speechSynthesis.getVoices();
-      if (vs.length > 0) setVoicesLoaded(true);
+      window.speechSynthesis.getVoices();
     };
     window.speechSynthesis.onvoiceschanged = loadVoices;
     loadVoices();
@@ -72,7 +76,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     const utterance = new SpeechSynthesisUtterance(text);
     
     // FETCH VOICES DYNAMICALLY ON CLICK/TRIGGER
-    // This is crucial for mobile browsers where getVoices() might return empty until interaction
     const voices = window.speechSynthesis.getVoices();
     
     // Priority: Indian English (Best for Hinglish/Roman Script) -> Hindi -> Default
@@ -108,87 +111,104 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     try {
       const model = 'gemini-2.5-flash';
       
-      const menuContext = menu.map(m => `${m.name} (${m.category}, ₹${m.price}, ${m.isVegetarian ? 'Veg' : 'Non-Veg'})`).join(', ');
+      const menuContext = menu.map(m => `${m.id}: ${m.name} (₹${m.price}, ${m.isVegetarian ? 'Veg' : 'Non-Veg'})`).join(', ');
       
-      // Hinglish Raju Persona
+      // Multilingual Raju Persona with Booking Logic
       const systemPrompt = `
         You are 'Raju', an experienced, extremely polite, and authentic waiter at 'Shourya Wada Dhaba'.
         
         **CORE INSTRUCTIONS:**
-        1. **Language:** The user might speak in Hindi, Marathi, Kannada, or English. You must UNDERSTAND all of them (even if transcribed phonetically in English text), but **REPLY ONLY IN HINGLISH** (Hindi words using English letters).
-        2. **Tone:** Very Polite. Use "Ji Sir", "Madam", "Sahab", "Hukum".
-        3. **CRITICAL:** If the user confirms a dish or asks for a dish, you **MUST SPEAK THE FULL NAME OF THE ITEM** in your reply. e.g. "Ji Sir, 1 Butter Chicken add kar diya." DO NOT just say "Okay" or "Done".
+        1. **Multilingual Understanding:** The user might speak in Hindi, Marathi, Kannada, or English. Understand the intent even if transcribed phonetically in English.
+        2. **Response Style:** **ALWAYS REPLY IN HINGLISH** (Hindi words using Roman/English alphabet). This is critical for the voice engine.
+           - Good: "Ji Sir, kitne log aayenge?"
+           - Bad: "जी सर, कितने लोग आएंगे" (No Devanagari).
+        3. **Tone:** Warm, respectful, Dhaba-style hospitality ("Ji Sir", "Hukum", "Madam").
+
+        **OUTPUT FORMAT:**
+        You must return a **STRICT JSON OBJECT** only. Do not add markdown or extra text.
+        Structure:
+        {
+          "response": "Your spoken response in Hinglish",
+          "action": "ADD_TO_CART" | "CHECKOUT" | "NAVIGATE_BOOKING" | "NONE",
+          "item": "Item Name" (only if action is ADD_TO_CART),
+          "quantity": 1 (default 1 if not specified)
+        }
+
+        **LOGIC & INTENTS:**
         
-        **Interaction Flow:**
-        1. **Welcome:** "Namaste Sir/Madam! Shourya Wada mein swagat hai."
-        2. **Preference:** Ask "Veg lenge ya Non-Veg Sir?" if unknown.
-        3. **Carb Check:** Ask "Roti ya Rice?" if dish is decided.
-        4. **Suggest:** Recommend 2 items based on preference.
+        1. **BOOKING / RESERVATION:**
+           - Keywords: "Book order", "Table lagao", "Reservation", "Seat chahiye", "Family aa rahi hai", "Table book".
+           - **Behavior:**
+             - If user hasn't specified number of people or time, **ASK FIRST**. 
+               Response: "Ji Sir, zaroor. Kitne log hain aur kab aana chahenge?" (Action: NONE).
+             - If user provides details (e.g. "4 log", "8 baje"), confirm and navigate.
+               Response: "Ji Sir, main booking page open kar raha hoon." (Action: NAVIGATE_BOOKING).
+             - If user insists on booking page directly:
+               Response: "Ji Sir, booking page khol raha hoon." (Action: NAVIGATE_BOOKING).
+
+        2. **ORDER FOOD (ADD TO CART):**
+           - If user wants a dish, check quantity. If ambiguous, assume 1 but confirm in speech.
+           - Action: ADD_TO_CART.
         
-        **Actions:**
-        - If user confirms a dish, output tag: [ORDER: ItemName].
-        - If user says "Book Order", "Checkout", "Bill", "Pay", "Bus", "Done", "Order maadi", "Enough", output tag: [ACTION: CHECKOUT].
+        3. **CHECKOUT / BILL:**
+           - Keywords: "Bill lao", "Order confirm", "Check out", "Pack kar do", "Order maadi" (Kannada), "Bill dya" (Marathi).
+           - Action: CHECKOUT.
+
+        4. **GENERAL CHAT:**
+           - If user asks recommendations, suggest items.
+           - Action: NONE.
 
         **Menu Context:** ${menuContext}
         
-        **Rules:**
-        - Keep responses short (max 20 words).
-        - Use Roman Script ONLY (No Devanagari).
-        - Be humble and respectful.
-
-        **Current User Input:** ${text}
+        **Current User Input:** "${text}"
       `;
 
       const chatHistory = messages.map(m => `${m.role === 'user' ? 'Customer' : 'Waiter'}: ${m.text}`).join('\n');
-      const prompt = `${systemPrompt}\n\nChat History:\n${chatHistory}\nCustomer: ${text}\nWaiter:`;
+      const prompt = `${systemPrompt}\n\nChat History:\n${chatHistory}\nCustomer: ${text}\n`;
 
       const response = await ai.models.generateContent({
         model: model,
         contents: prompt,
+        config: { responseMimeType: "application/json" }
       });
 
-      const aiResponse = response.text.trim();
+      const jsonText = response.text.trim();
+      let parsedData: AIResponse;
       
-      // 1. Check for Checkout Action
-      if (aiResponse.includes('[ACTION: CHECKOUT]')) {
-        const cleanResponse = aiResponse.replace(/\[ACTION: CHECKOUT\]/g, '').replace(/\[ORDER: .*?\]/g, '').trim();
-        const finalMsg = cleanResponse || "Ji Sir, main bill lekar aata hoon. Payment counter pe chaliye.";
-        
-        setMessages(prev => [...prev, { role: 'ai', text: finalMsg }]);
-        speakText(finalMsg);
-        
-        setTimeout(() => {
+      try {
+        parsedData = JSON.parse(jsonText);
+      } catch (e) {
+        console.error("JSON Parse Error", e);
+        // Fallback if AI fails to give JSON
+        parsedData = { response: "Maaf kijiye Sir, samajh nahi aaya. Phir se boliye?", action: "NONE" };
+      }
+
+      setMessages(prev => [...prev, { role: 'ai', text: parsedData.response }]);
+      speakText(parsedData.response);
+
+      // Handle Actions
+      if (parsedData.action === 'NAVIGATE_BOOKING') {
+         setTimeout(() => {
+            setIsOpen(false);
+            onBooking();
+         }, 2500);
+      } else if (parsedData.action === 'CHECKOUT') {
+         setTimeout(() => {
             setIsOpen(false);
             onCheckout();
-        }, 2500);
-        
-        setIsProcessing(false);
-        return;
+         }, 2500);
+      } else if (parsedData.action === 'ADD_TO_CART' && parsedData.item) {
+         // Fuzzy find item
+         const item = menu.find(m => m.name.toLowerCase().includes(parsedData.item!.toLowerCase()));
+         if (item) {
+             const qty = parsedData.quantity || 1;
+             for(let i=0; i<qty; i++) addToCart(item);
+         }
       }
-
-      // 2. Check for Order Tag
-      const orderMatch = aiResponse.match(/\[ORDER: (.*?)\]/);
-      let displayResponse = aiResponse.replace(/\[ORDER: .*?\]/, '').trim();
-
-      if (orderMatch) {
-        const itemName = orderMatch[1];
-        // Fuzzy search for item
-        const item = menu.find(m => m.name.toLowerCase().includes(itemName.toLowerCase()));
-        if (item) {
-          addToCart(item);
-          // Force the response to be very explicit if the AI was lazy
-          if (!displayResponse.toLowerCase().includes(item.name.toLowerCase())) {
-             displayResponse = `Ji Sir, 1 ${item.name} add kar diya hai.`;
-          }
-        }
-      }
-
-      setMessages(prev => [...prev, { role: 'ai', text: displayResponse }]);
-      speakText(displayResponse);
 
     } catch (error) {
       console.error("AI Error:", error);
-      const fallback = "Maaf kijiye Sir, network issue hai. Kripya menu se order karein.";
+      const fallback = "Maaf kijiye Sir, network issue hai.";
       setMessages(prev => [...prev, { role: 'ai', text: fallback }]);
       speakText(fallback);
     } finally {
@@ -313,13 +333,13 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
                     <button 
                         onClick={() => {
                             setIsOpen(false);
-                            onCheckout();
+                            onBooking();
                         }}
-                        className="absolute right-6 p-4 rounded-full bg-green-100 text-green-700 hover:bg-green-200 transition-colors flex flex-col items-center gap-1 shadow-md"
-                        title="Go to Checkout"
+                        className="absolute right-6 p-4 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors flex flex-col items-center gap-1 shadow-md"
+                        title="Book Table"
                     >
-                        <ShoppingBag size={24} />
-                        <span className="text-[10px] font-bold">BILL</span>
+                        <Calendar size={24} />
+                        <span className="text-[10px] font-bold">BOOK</span>
                     </button>
                </div>
                
