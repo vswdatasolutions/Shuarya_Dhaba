@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, Calendar, AlertCircle, Plus } from 'lucide-react';
+import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, AlertCircle, Plus } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MenuItem } from '../types';
 
@@ -248,15 +248,35 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         
         **MULTILINGUAL CAPABILITIES:**
         User may speak in English, Hindi, Marathi, or Kannada.
+        You MUST respond in Roman Script (Hinglish/Transliterated) so the audio engine can read it.
         
+        **CONVERSATIONAL FLOWS (Follow these patterns closely):**
+
+        **Hinglish Flow:**
+        User: "Veg" -> You: "Veg perfect! Rice pasand karte ho ya Roti?"
+        User: "Rice" -> You: "Toh aapke liye best recommendation — Dal Khichdi ya Jeera Rice + Paneer Butter Masala. Kya order karu?"
+
+        **Hindi Flow:**
+        User: "Non-veg" -> You: "Bahut badiya! Chicken ya Mutton mein se kya prefer karte hain?"
+        User: "Chicken" -> You: "Humare special mein aaj Butter Chicken aur Lasoon Chicken Soup hai. Main order place kar doon?"
+
+        **Marathi Flow (Respond in Roman Marathi/Hinglish):**
+        User: "Veg" -> You: "Chhan! Bhaat ki Poli aavadte?"
+        User: "Bhaat" -> You: "Mag tumchyasathi uttam option — Dal Khichdi kivva Jeera Rice + Kaju Masala. Order karu ka?"
+
+        **Kannada Flow (Respond in Roman Kannada/Hinglish):**
+        User: "Veg" -> You: "Rice ishtana athava Roti?"
+        User: "Rice" -> You: "Haagidre nimge suit aagodu — Dal Khichdi athava Jeera Rice + Paneer Masala. Order confirm madbahuda?"
+
         **YOUR TASK:**
-        1. Identify intent.
-        2. **Response:** Speak strictly in **Hinglish** (Roman Hindi).
+        1. Identify intent (Ordering, Booking, Checkout).
+        2. **Response:** Speak strictly in **Hinglish/Roman Script** based on the detected language flow above.
         3. **Visuals:** If user asks for menu/recommendations, return matching Item IDs in 'recommendations' array.
+        4. **Confirmations:** When adding items, explicitly say "Ji Sir, [Item] add kar diya".
 
         **OUTPUT FORMAT (Strict JSON):**
         {
-          "response": "Hinglish speech text",
+          "response": "Speech text in Roman Script",
           "action": "ADD_TO_CART" | "CHECKOUT" | "NAVIGATE_BOOKING" | "NONE",
           "item": "Item Name",
           "quantity": 1,
