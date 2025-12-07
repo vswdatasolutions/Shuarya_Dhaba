@@ -114,32 +114,29 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       
       // Hinglish Raju Persona
       const systemPrompt = `
-        You are 'Raju', an experienced, friendly, and authentic waiter at 'Shourya Wada Dhaba'.
+        You are 'Raju', an experienced, extremely polite, and authentic waiter at 'Shourya Wada Dhaba'.
         
-        **CORE INSTRUCTION:** Speak in **Hinglish** (Hindi words using English letters).
+        **CORE INSTRUCTIONS:**
+        1. **Language:** The user might speak in Hindi, Marathi, Kannada, or English. You must UNDERSTAND all of them (even if transcribed phonetically in English text), but **REPLY ONLY IN HINGLISH** (Hindi words using English letters).
+        2. **Tone:** Very Polite. Use "Ji Sir", "Madam", "Sahab", "Hukum".
+        3. **Ordering:** If the user asks for a dish, REPEAT the item name clearly to confirm. e.g., "Ji Sir, 1 Butter Chicken add kar raha hoon."
         
-        **Tone:** Friendly, Respectful, Desi.
-        
-        **Language Style Examples:**
-        - "Namaste Sir/Madam! Aaj kya order karenge?"
-        - "Dal Tadka bahut badhiya hai aaj."
-        - "Thoda spicy banau kya?"
-        - "Aur kuch chahiye?"
-
         **Interaction Flow:**
-        1. **Preference:** Ask "Veg ya Non-Veg?" if unknown.
-        2. **Carb Check:** Ask "Roti ya Rice?" if dish is decided.
-        3. **Suggest:** Recommend 2 items based on preference.
+        1. **Welcome:** "Namaste Sir/Madam! Shourya Wada mein swagat hai."
+        2. **Preference:** Ask "Veg lenge ya Non-Veg Sir?" if unknown.
+        3. **Carb Check:** Ask "Roti ya Rice?" if dish is decided.
+        4. **Suggest:** Recommend 2 items based on preference.
         
         **Actions:**
         - If user confirms a dish, output tag: [ORDER: ItemName].
-        - If user says "Book Order", "Checkout", "Bill", "Bus", "Done", "Order maadi", "Enough", output tag: [ACTION: CHECKOUT].
+        - If user says "Book Order", "Checkout", "Bill", "Pay", "Bus", "Done", "Order maadi", "Enough", output tag: [ACTION: CHECKOUT].
 
         **Menu Context:** ${menuContext}
         
         **Rules:**
         - Keep responses short (max 20 words).
         - Use Roman Script ONLY (No Devanagari).
+        - Be humble and respectful.
 
         **Current User Input:** ${text}
       `;
@@ -157,7 +154,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       // 1. Check for Checkout Action
       if (aiResponse.includes('[ACTION: CHECKOUT]')) {
         const cleanResponse = aiResponse.replace(/\[ACTION: CHECKOUT\]/g, '').replace(/\[ORDER: .*?\]/g, '').trim();
-        const finalMsg = cleanResponse || "Ji Sir, main bill ready karta hoon.";
+        const finalMsg = cleanResponse || "Ji Sir, main bill lekar aata hoon. Payment counter pe chaliye.";
         
         setMessages(prev => [...prev, { role: 'ai', text: finalMsg }]);
         speakText(finalMsg);
@@ -165,7 +162,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         setTimeout(() => {
             setIsOpen(false);
             onCheckout();
-        }, 2000);
+        }, 2500);
         
         setIsProcessing(false);
         return;
@@ -190,7 +187,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
     } catch (error) {
       console.error("AI Error:", error);
-      const fallback = "Network slow hai sir. Please menu se order karein.";
+      const fallback = "Maaf kijiye Sir, network issue hai. Kripya menu se order karein.";
       setMessages(prev => [...prev, { role: 'ai', text: fallback }]);
       speakText(fallback);
     } finally {
@@ -215,7 +212,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
     if (messages.length === 0) {
       // Hinglish Greeting
-      const intro = "Namaste! Shourya Wada mein swagat hai. Veg ya Non-Veg?";
+      const intro = "Namaste Sir! Shourya Wada mein aapka swagat hai. Kya lenge aaj? Veg ya Non-Veg?";
       setMessages([{ role: 'ai', text: intro }]);
       setTimeout(() => speakText(intro), 500);
     }
@@ -230,7 +227,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         aria-label="Talk to AI Waiter"
       >
         <div className="absolute -top-10 right-0 bg-white text-gray-900 text-[10px] font-bold px-3 py-1.5 rounded-lg shadow-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none transform translate-y-2 group-hover:translate-y-0">
-            Order Voice 🎙️
+            Voice Order 🎙️
         </div>
         <Mic size={32} />
       </button>
@@ -248,7 +245,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
                 </div>
                 <div>
                   <h3 className="font-bold text-xl leading-tight">Raju (Waiter)</h3>
-                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">Hinglish • Voice Order</p>
+                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">Hindi • Marathi • Kannada • English</p>
                 </div>
               </div>
               <button 
@@ -277,7 +274,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
                 <div className="flex justify-start animate-fade-in">
                    <div className="bg-white p-3 rounded-2xl rounded-bl-none shadow-sm border border-gray-100 flex items-center gap-2.5">
                       <Loader2 size={16} className="animate-spin text-orange-600" />
-                      <span className="text-xs text-gray-500 font-medium italic">Sun raha hoon...</span>
+                      <span className="text-xs text-gray-500 font-medium italic">Sun raha hoon Sir...</span>
                    </div>
                 </div>
               )}
@@ -329,7 +326,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
                </div>
                
                <p className="text-sm font-semibold text-gray-400 text-center max-w-[200px]">
-                 {isListening ? "Boliye..." : "Tap & Speak"}
+                 {isListening ? "Boliye Sir..." : "Tap & Speak"}
                </p>
             </div>
           </div>

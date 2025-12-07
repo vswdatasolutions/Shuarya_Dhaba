@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Role, MenuItem, CartItem, Order, OrderStatus, OrderType, User } from './types';
 import { MOCK_MENU, MOCK_ORDERS, MOCK_TABLES } from './constants';
 import { CustomerView } from './components/CustomerView';
@@ -16,18 +16,62 @@ const App: React.FC = () => {
   const [orders, setOrders] = useState<Order[]>(MOCK_ORDERS);
   const [tables, setTables] = useState(MOCK_TABLES);
 
+  // 1. Persistent Login: Check LocalStorage on Mount
+  useEffect(() => {
+    const savedUser = localStorage.getItem('dhaba_user');
+    if (savedUser) {
+      try {
+        setCurrentUser(JSON.parse(savedUser));
+      } catch (e) {
+        localStorage.removeItem('dhaba_user');
+      }
+    }
+  }, []);
+
+  // 2. Live Kitchen Simulation (Simulates a real backend)
+  useEffect(() => {
+    // Every 15 seconds, check if any order needs to move forward
+    const interval = setInterval(() => {
+      setOrders(prevOrders => {
+        return prevOrders.map(order => {
+          // Only update active orders randomly to simulate human work
+          if (Math.random() > 0.3) return order; 
+
+          const timeDiff = Date.now() - order.timestamp;
+          
+          // Auto-move Pending to Preparing after 30 seconds
+          if (order.status === OrderStatus.PENDING && timeDiff > 30000) {
+            return { ...order, status: OrderStatus.PREPARING };
+          }
+          
+          // Auto-move Preparing to Ready after 2 minutes
+          if (order.status === OrderStatus.PREPARING && timeDiff > 120000) {
+             return { ...order, status: OrderStatus.READY };
+          }
+
+          return order;
+        });
+      });
+    }, 5000); // Check every 5 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
   // Auth Actions
   const handleLogin = (role: Role, name: string) => {
-    setCurrentUser({
+    const user = {
       id: Date.now().toString(),
       name: name,
       role: role
-    });
+    };
+    setCurrentUser(user);
+    localStorage.setItem('dhaba_user', JSON.stringify(user));
   };
 
   const handleLogout = () => {
     setCurrentUser(null);
-    setCart([]); // Clear cart on logout
+    setCart([]); 
+    localStorage.removeItem('dhaba_user');
   };
 
   // Cart Actions
@@ -83,6 +127,11 @@ const App: React.FC = () => {
 
   // Helper to switch views within Admin Roles (Customer is locked to Customer View)
   const currentRole = currentUser.role;
+
+  // Filter orders for the specific customer
+  const myOrders = currentRole === Role.CUSTOMER 
+    ? orders.filter(o => o.customerName === currentUser.name)
+    : orders;
 
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-gray-50 font-sans text-gray-900">
@@ -154,6 +203,7 @@ const App: React.FC = () => {
                 placeOrder={placeOrder} 
                 userName={currentUser.name}
                 onLogout={handleLogout}
+                activeOrders={myOrders.filter(o => o.status !== OrderStatus.DELIVERED && o.status !== OrderStatus.CANCELLED)}
             />
         )}
         
