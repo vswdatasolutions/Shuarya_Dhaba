@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, Calendar, AlertCircle } from 'lucide-react';
+import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, Calendar, AlertCircle, Plus } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MenuItem } from '../types';
 
@@ -17,6 +17,13 @@ interface AIResponse {
   quantity?: number;
   people?: number;
   time?: string;
+  recommendations?: string[]; // List of Item IDs to show cards
+}
+
+interface ChatMessage {
+    role: 'user' | 'ai';
+    text: string;
+    recommendations?: string[];
 }
 
 export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart, onCheckout, onBooking }) => {
@@ -25,10 +32,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
-  const [messages, setMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   
   const recognitionRef = useRef<any>(null);
   const synthRef = useRef<SpeechSynthesis>(window.speechSynthesis);
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   // Initialize Gemini
   const apiKey = process.env.API_KEY || '';
@@ -43,6 +51,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     loadVoices();
     return () => { window.speechSynthesis.onvoiceschanged = null; };
   }, []);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isProcessing]);
 
   useEffect(() => {
     // Initialize Speech Recognition
@@ -75,13 +88,13 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         setIsListening(false);
         
         if (event.error === 'no-speech') {
-            setSpeechError("Didn't catch that. Tap to try again.");
+            setSpeechError("Silence detected. Tap to speak.");
         } else if (event.error === 'not-allowed') {
-            setSpeechError("Mic permission denied. Check settings.");
+            setSpeechError("Mic permission denied.");
         } else if (event.error === 'network') {
-            setSpeechError("Network error. Check connection.");
+            setSpeechError("Network error. Check internet.");
         } else {
-            setSpeechError("Error occurred. Tap to retry.");
+            setSpeechError("Error. Tap to retry.");
         }
       };
     }
@@ -124,11 +137,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     synthRef.current.speak(utterance);
   };
 
-  /**
-   * SELF-LEARNING SIMULATION
-   * Logs user inputs and successful actions to localStorage.
-   * In a real app, this would send data to a backend to fine-tune the model.
-   */
   const saveTrainingData = (input: string, action: string, details?: any) => {
     try {
         const existingData = localStorage.getItem('dhaba_learning_logs');
@@ -140,7 +148,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
             details,
             languageDetected: 'mixed-indian-polyglot' 
         });
-        // Keep last 50 logs to avoid overflow
         if (logs.length > 50) logs.shift();
         localStorage.setItem('dhaba_learning_logs', JSON.stringify(logs));
     } catch (e) {
@@ -150,7 +157,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
   /**
    * SMART OFFLINE FALLBACK (Local Logic Engine)
-   * Simulates the AI when API Key is missing or network fails.
    */
   const generateMockResponse = (text: string): AIResponse => {
     const lowerText = text.toLowerCase();
@@ -158,9 +164,9 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     // 1. Check for Menu Items
     for (const item of menu) {
         if (lowerText.includes(item.name.toLowerCase()) || 
-           (item.name.includes("Chicken") && lowerText.includes("chicken")) ||
-           (item.name.includes("Paneer") && lowerText.includes("paneer")) ||
-           (item.name.includes("Dal") && lowerText.includes("dal"))) {
+           (item.name.includes("chicken") && lowerText.includes("chicken")) ||
+           (item.name.includes("paneer") && lowerText.includes("paneer")) ||
+           (item.name.includes("dal") && lowerText.includes("dal"))) {
              
             let qty = 1;
             if (lowerText.includes("2") || lowerText.includes("do")) qty = 2;
@@ -168,7 +174,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
             if (lowerText.includes("4") || lowerText.includes("chaar")) qty = 4;
 
             return {
-                response: `Ji Sir, ${qty} ${item.name} cart mein add kar diya hai. Aur kuch?`,
+                response: `Ji Sir, ${qty} ${item.name} add kar diya hai. Aur kuch?`,
                 action: 'ADD_TO_CART',
                 item: item.name, 
                 quantity: qty
@@ -176,9 +182,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         }
     }
 
-    // 2. Booking Intent (Enhanced with Extraction)
+    // 2. Booking Intent
     if (lowerText.includes("book") || lowerText.includes("table") || lowerText.includes("seat") || lowerText.includes("reserve") || lowerText.includes("pahije") || lowerText.includes("beku")) {
-        // Try to extract number of people (simple heuristic)
         const peopleMatch = text.match(/(\d+)/);
         const people = peopleMatch ? parseInt(peopleMatch[0]) : 2;
 
@@ -189,7 +194,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         };
     }
 
-    // 3. Checkout Intent (Multilingual)
+    // 3. Checkout Intent
     if (lowerText.includes("bill") || lowerText.includes("check") || lowerText.includes("pay") || lowerText.includes("order") || lowerText.includes("dya") || lowerText.includes("kodi")) {
         return {
             response: "Ji Sir, main aapka bill ready kar raha hoon.",
@@ -197,7 +202,18 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         };
     }
 
-    // 4. Greetings
+    // 4. Menu/Recommendation Intent -> Show Cards
+    if (lowerText.includes("menu") || lowerText.includes("recommend") || lowerText.includes("kya hai") || lowerText.includes("badiya") || lowerText.includes("show")) {
+        // Return popular items
+        const popularIds = menu.filter(m => m.price > 200).slice(0, 4).map(m => m.id);
+        return {
+            response: "Ye rahe hamare kuch khaas Dhaba specials. Touch karke add karein:",
+            action: 'NONE',
+            recommendations: popularIds
+        };
+    }
+
+    // 5. Greetings
     if (lowerText.includes("hi") || lowerText.includes("hello") || lowerText.includes("namaste")) {
         return {
             response: "Namaste Sir! Shourya Wada mein aapka swagat hai. Kya order karenge?",
@@ -207,7 +223,9 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
     return {
         response: "Maaf kijiye Sir, main samjha nahi. Kya aap menu dekhna chahenge?",
-        action: 'NONE'
+        action: 'NONE',
+        // Fallback recommendations if user is confused
+        recommendations: menu.slice(0, 3).map(m => m.id)
     };
   };
 
@@ -230,24 +248,20 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         
         **MULTILINGUAL CAPABILITIES:**
         User may speak in English, Hindi, Marathi, or Kannada.
-        - **Booking Keywords:** "Table lagao", "Book order", "Table pahije" (Marathi), "Seat bekagide" (Kannada), "Reservation".
-        - **Checkout Keywords:** "Bill dya" (Marathi), "Bill lyao" (Hindi), "Bill kodi" (Kannada), "Payment".
         
         **YOUR TASK:**
-        1. Identify intent: ADD_TO_CART, CHECKOUT, NAVIGATE_BOOKING, or NONE.
-        2. **Extract Data:**
-           - If Booking: Try to extract 'people' (count) and 'time' (e.g., 20:00).
-        3. **Response:** Speak strictly in **Hinglish** (Roman Hindi) regardless of input language.
-           - Confirm actions explicitly (e.g., "Ji Sir, 4 logon ka table book kar raha hoon").
+        1. Identify intent.
+        2. **Response:** Speak strictly in **Hinglish** (Roman Hindi).
+        3. **Visuals:** If user asks for menu/recommendations, return matching Item IDs in 'recommendations' array.
 
         **OUTPUT FORMAT (Strict JSON):**
         {
           "response": "Hinglish speech text",
           "action": "ADD_TO_CART" | "CHECKOUT" | "NAVIGATE_BOOKING" | "NONE",
-          "item": "Item Name" (if adding to cart),
+          "item": "Item Name",
           "quantity": 1,
-          "people": 4 (if booking detected, default null),
-          "time": "HH:MM" (if time detected, default null)
+          "people": 4,
+          "recommendations": ["id1", "id2"]
         }
 
         **Menu:** ${menuContext}
@@ -260,11 +274,10 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         config: { responseMimeType: "application/json" }
       });
 
-      // Sanitization to handle potential markdown code blocks
       const jsonText = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsedData: AIResponse = JSON.parse(jsonText);
 
-      setMessages(prev => [...prev, { role: 'ai', text: parsedData.response }]);
+      setMessages(prev => [...prev, { role: 'ai', text: parsedData.response, recommendations: parsedData.recommendations }]);
       speakText(parsedData.response);
       handleActions(parsedData, text);
 
@@ -273,7 +286,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       const mockResponse = generateMockResponse(text);
       
       setTimeout(() => {
-        setMessages(prev => [...prev, { role: 'ai', text: mockResponse.response }]);
+        setMessages(prev => [...prev, { role: 'ai', text: mockResponse.response, recommendations: mockResponse.recommendations }]);
         speakText(mockResponse.response);
         handleActions(mockResponse, text);
       }, 800);
@@ -283,7 +296,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   };
 
   const handleActions = (data: AIResponse, originalInput: string) => {
-      // Save data for self-learning
       if (data.action !== 'NONE') {
           saveTrainingData(originalInput, data.action, { item: data.item, people: data.people });
       }
@@ -291,7 +303,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       if (data.action === 'NAVIGATE_BOOKING') {
          setTimeout(() => {
             setIsOpen(false);
-            // Pass extracted data to pre-fill the form
             onBooking({ people: data.people, time: data.time });
          }, 2500);
       } else if (data.action === 'CHECKOUT') {
@@ -318,7 +329,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
-      // Cancel speech synthesis if playing to avoid feedback loop
       if (isSpeaking) {
         synthRef.current.cancel();
       }
@@ -335,7 +345,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     setIsOpen(true);
     setSpeechError(null);
     if (messages.length === 0) {
-      const intro = "Namaste! Shourya Wada mein aapka swagat hai. Table book karu ya order lenge?";
+      const intro = "Namaste! Shourya Wada mein aapka swagat hai. Kya khaenge aaj?";
       setMessages([{ role: 'ai', text: intro }]);
       setTimeout(() => speakText(intro), 500);
     }
@@ -358,17 +368,17 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       {/* Chat Interface Modal */}
       {isOpen && (
         <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh] animate-slide-up relative">
+          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[80vh] md:max-h-[700px] animate-slide-up relative">
             
             {/* Header */}
-            <div className="bg-gradient-to-r from-orange-600 to-red-600 p-4 flex justify-between items-center text-white shadow-md">
+            <div className="bg-gradient-to-r from-orange-600 to-red-600 p-4 flex justify-between items-center text-white shadow-md flex-shrink-0">
               <div className="flex items-center gap-3">
                 <div className="bg-white/20 p-2 rounded-full border border-white/20 backdrop-blur-md">
                   <MessageSquare size={24} />
                 </div>
                 <div>
                   <h3 className="font-bold text-xl leading-tight">Raju (Waiter)</h3>
-                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">Hindi • Marathi • Kannada</p>
+                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">AI Voice Assistant</p>
                 </div>
               </div>
               <button 
@@ -380,9 +390,11 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
             </div>
 
             {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-orange-50/30 min-h-[300px]">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-orange-50/30">
               {messages.map((msg, idx) => (
-                <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-slide-up`}>
+                <div key={idx} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'} animate-slide-up`}>
+                  
+                  {/* Text Bubble */}
                   <div className={`max-w-[85%] p-4 rounded-2xl text-base font-medium leading-relaxed shadow-sm ${
                     msg.role === 'user' 
                     ? 'bg-gray-800 text-white rounded-br-none' 
@@ -391,21 +403,54 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
                     {msg.role === 'ai' && <span className="block text-[10px] font-bold text-orange-600 mb-1 uppercase tracking-wider">Raju</span>}
                     {msg.text}
                   </div>
+
+                  {/* Visual Menu Cards (If Recommendations exist) */}
+                  {msg.recommendations && msg.recommendations.length > 0 && (
+                      <div className="w-full mt-3 overflow-x-auto no-scrollbar pb-2">
+                          <div className="flex gap-3 px-1">
+                              {msg.recommendations.map(itemId => {
+                                  const item = menu.find(m => m.id === itemId);
+                                  if (!item) return null;
+                                  return (
+                                      <div key={itemId} className="flex-shrink-0 w-40 bg-white rounded-xl shadow-md border border-gray-200 overflow-hidden flex flex-col">
+                                          <div className="h-24 bg-gray-100 overflow-hidden">
+                                              <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover" />
+                                          </div>
+                                          <div className="p-3 flex flex-col flex-1">
+                                              <h4 className="text-xs font-bold text-gray-900 line-clamp-1">{item.name}</h4>
+                                              <p className="text-xs text-gray-500 mb-2">₹{item.price}</p>
+                                              <button 
+                                                  onClick={() => {
+                                                      addToCart(item);
+                                                      speakText(`${item.name} added.`);
+                                                  }}
+                                                  className="mt-auto bg-orange-100 text-orange-700 text-xs font-bold py-1.5 rounded-lg hover:bg-orange-600 hover:text-white transition-colors flex items-center justify-center gap-1"
+                                              >
+                                                  ADD <Plus size={12} strokeWidth={3} />
+                                              </button>
+                                          </div>
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      </div>
+                  )}
                 </div>
               ))}
+              
               {isProcessing && (
                 <div className="flex justify-start animate-fade-in">
                    <div className="bg-white p-3 rounded-2xl rounded-bl-none shadow-sm border border-gray-100 flex items-center gap-2.5">
                       <Loader2 size={16} className="animate-spin text-orange-600" />
-                      <span className="text-xs text-gray-500 font-medium italic">Sun raha hoon Sir...</span>
+                      <span className="text-xs text-gray-500 font-medium italic">Sun raha hoon...</span>
                    </div>
                 </div>
               )}
-              <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })}></div>
+              <div ref={chatEndRef}></div>
             </div>
 
             {/* Mic Control Area */}
-            <div className="p-6 bg-white border-t border-gray-100 flex flex-col items-center gap-4 relative">
+            <div className="p-6 bg-white border-t border-gray-100 flex flex-col items-center gap-4 flex-shrink-0 relative">
                
                {/* Status Pill */}
                <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full shadow-sm text-[10px] font-bold flex items-center gap-2 border ${speechError ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-200 text-gray-500'}`}>
@@ -438,18 +483,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
                         style={{ width: '80px', height: '80px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                     >
                         {isListening ? <MicOff size={36} /> : <Mic size={36} />}
-                    </button>
-
-                    <button 
-                        onClick={() => {
-                            setIsOpen(false);
-                            onBooking();
-                        }}
-                        className="absolute right-6 p-4 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors flex flex-col items-center gap-1 shadow-md"
-                        title="Book Table"
-                    >
-                        <Calendar size={24} />
-                        <span className="text-[10px] font-bold">BOOK</span>
                     </button>
                </div>
                
