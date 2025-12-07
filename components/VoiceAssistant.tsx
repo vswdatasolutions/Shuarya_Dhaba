@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, ShoppingBag, Calendar } from 'lucide-react';
+import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, Calendar } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MenuItem } from '../types';
 
@@ -104,16 +104,81 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     synthRef.current.speak(utterance);
   };
 
+  /**
+   * SMART OFFLINE FALLBACK (Local Logic Engine)
+   * Simulates the AI when API Key is missing or network fails.
+   */
+  const generateMockResponse = (text: string): AIResponse => {
+    const lowerText = text.toLowerCase();
+    
+    // 1. Check for Menu Items
+    for (const item of menu) {
+        if (lowerText.includes(item.name.toLowerCase()) || 
+           (item.name.includes("Chicken") && lowerText.includes("chicken")) ||
+           (item.name.includes("Paneer") && lowerText.includes("paneer")) ||
+           (item.name.includes("Dal") && lowerText.includes("dal"))) {
+             
+            // Match found!
+            // Try to detect quantity
+            let qty = 1;
+            if (lowerText.includes("2") || lowerText.includes("do")) qty = 2;
+            if (lowerText.includes("3") || lowerText.includes("teen")) qty = 3;
+            if (lowerText.includes("4") || lowerText.includes("chaar")) qty = 4;
+
+            return {
+                response: `Ji Sir, ${qty} ${item.name} cart mein add kar diya hai. Aur kuch?`,
+                action: 'ADD_TO_CART',
+                item: item.name, // Use exact menu name for matching
+                quantity: qty
+            };
+        }
+    }
+
+    // 2. Booking Intent
+    if (lowerText.includes("book") || lowerText.includes("table") || lowerText.includes("seat") || lowerText.includes("reserve")) {
+        return {
+            response: "Ji Sir, table book karne ke liye main aapko booking page par le ja raha hoon.",
+            action: 'NAVIGATE_BOOKING'
+        };
+    }
+
+    // 3. Checkout Intent
+    if (lowerText.includes("bill") || lowerText.includes("check") || lowerText.includes("payment") || lowerText.includes("pay") || lowerText.includes("order")) {
+        return {
+            response: "Ji Sir, main aapka bill ready kar raha hoon.",
+            action: 'CHECKOUT'
+        };
+    }
+
+    // 4. Greetings / General
+    if (lowerText.includes("hi") || lowerText.includes("hello") || lowerText.includes("namaste")) {
+        return {
+            response: "Namaste Sir! Boliye kya sewa karu?",
+            action: 'NONE'
+        };
+    }
+
+    // Default Fallback
+    return {
+        response: "Maaf kijiye Sir, main samjha nahi. Kya aap menu se kuch order karna chahenge?",
+        action: 'NONE'
+    };
+  };
+
   const handleUserMessage = async (text: string) => {
     setMessages(prev => [...prev, { role: 'user', text }]);
     setIsProcessing(true);
 
     try {
+      // Check if API Key exists, if not, throw immediately to use fallback
+      if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') {
+        throw new Error("No API Key");
+      }
+
       const model = 'gemini-2.5-flash';
       
       const menuContext = menu.map(m => `${m.id}: ${m.name} (₹${m.price}, ${m.isVegetarian ? 'Veg' : 'Non-Veg'})`).join(', ');
       
-      // Multilingual Raju Persona with Booking Logic & Improved Confirmations
       const systemPrompt = `
         You are 'Raju', an experienced, extremely polite, and authentic waiter at 'Shourya Wada Dhaba'.
         
@@ -135,90 +200,63 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
           "quantity": 1 (default 1 if not specified)
         }
 
-        **LOGIC & INTENTS:**
-        
-        1. **BOOKING / RESERVATION:**
-           - Keywords: "Book order", "Table lagao", "Reservation", "Seat chahiye", "Family aa rahi hai", "Table book".
-           - **Behavior:**
-             - If user hasn't specified number of people or time, **ASK FIRST**. 
-               Response: "Ji Sir, zaroor. Kitne log hain aur kab aana chahenge?" (Action: NONE).
-             - If user provides details (e.g. "4 log", "8 baje"), confirm and navigate.
-               Response: "Ji Sir, table book karne ke liye main aapko booking page par le ja raha hoon." (Action: NAVIGATE_BOOKING).
-             - If user insists on booking page directly:
-               Response: "Ji Sir, booking page khol raha hoon." (Action: NAVIGATE_BOOKING).
-
-        2. **ORDER FOOD (ADD TO CART):**
-           - If user wants a dish, check quantity. If ambiguous, assume 1 but confirm in speech.
-           - **CRITICAL:** In your "response" text, explicitly confirm the item and quantity added.
-             - Example: "Ji Sir, 1 Butter Chicken cart mein add kar diya hai. Aur kuch lenge?"
-           - Action: ADD_TO_CART.
-        
-        3. **CHECKOUT / BILL:**
-           - Keywords: "Bill lao", "Order confirm", "Check out", "Pack kar do", "Order maadi" (Kannada), "Bill dya" (Marathi).
-           - Response: "Ji Sir, main aapka bill ready kar raha hoon. Checkout page par chalte hain."
-           - Action: CHECKOUT.
-
-        4. **GENERAL CHAT:**
-           - If user asks recommendations, suggest items based on the menu.
-           - Always end with a polite question like "Kya main kuch aur laaun?" or "Order place karoon?"
-           - Action: NONE.
-
         **Menu Context:** ${menuContext}
-        
         **Current User Input:** "${text}"
       `;
 
-      const chatHistory = messages.map(m => `${m.role === 'user' ? 'Customer' : 'Waiter'}: ${m.text}`).join('\n');
-      const prompt = `${systemPrompt}\n\nChat History:\n${chatHistory}\nCustomer: ${text}\n`;
-
       const response = await ai.models.generateContent({
         model: model,
-        contents: prompt,
+        contents: systemPrompt,
         config: { responseMimeType: "application/json" }
       });
 
-      const jsonText = response.text.trim();
-      let parsedData: AIResponse;
-      
-      try {
-        parsedData = JSON.parse(jsonText);
-      } catch (e) {
-        console.error("JSON Parse Error", e);
-        // Fallback if AI fails to give JSON
-        parsedData = { response: "Maaf kijiye Sir, samajh nahi aaya. Phir se boliye?", action: "NONE" };
-      }
+      const jsonText = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
+      const parsedData: AIResponse = JSON.parse(jsonText);
 
       setMessages(prev => [...prev, { role: 'ai', text: parsedData.response }]);
       speakText(parsedData.response);
+      handleActions(parsedData);
 
-      // Handle Actions
-      if (parsedData.action === 'NAVIGATE_BOOKING') {
+    } catch (error) {
+      console.log("Using Offline Fallback Mode");
+      // Use Robust Local Fallback Logic
+      const mockResponse = generateMockResponse(text);
+      
+      // Artificial delay to simulate "Thinking"
+      setTimeout(() => {
+        setMessages(prev => [...prev, { role: 'ai', text: mockResponse.response }]);
+        speakText(mockResponse.response);
+        handleActions(mockResponse);
+      }, 800);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleActions = (data: AIResponse) => {
+      if (data.action === 'NAVIGATE_BOOKING') {
          setTimeout(() => {
             setIsOpen(false);
             onBooking();
          }, 2500);
-      } else if (parsedData.action === 'CHECKOUT') {
+      } else if (data.action === 'CHECKOUT') {
          setTimeout(() => {
             setIsOpen(false);
             onCheckout();
          }, 2500);
-      } else if (parsedData.action === 'ADD_TO_CART' && parsedData.item) {
-         // Fuzzy find item
-         const item = menu.find(m => m.name.toLowerCase().includes(parsedData.item!.toLowerCase()));
+      } else if (data.action === 'ADD_TO_CART' && data.item) {
+         // Fuzzy find item (Robust matching)
+         const targetName = data.item.toLowerCase();
+         const item = menu.find(m => {
+            const menuName = m.name.toLowerCase();
+            return menuName.includes(targetName) || targetName.includes(menuName);
+         });
+         
          if (item) {
-             const qty = parsedData.quantity || 1;
+             const qty = data.quantity || 1;
              for(let i=0; i<qty; i++) addToCart(item);
          }
       }
-
-    } catch (error) {
-      console.error("AI Error:", error);
-      const fallback = "Maaf kijiye Sir, network issue hai.";
-      setMessages(prev => [...prev, { role: 'ai', text: fallback }]);
-      speakText(fallback);
-    } finally {
-      setIsProcessing(false);
-    }
   };
 
   const toggleListening = () => {

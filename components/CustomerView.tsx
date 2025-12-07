@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MenuItem, CartItem, OrderType, Order, OrderStatus } from '../types';
-import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Phone, LogOut, Volume2, X, VolumeX, Loader2, CheckCircle, Smartphone, CreditCard, Wallet, Settings, History, ChevronRight } from 'lucide-react';
+import { ShoppingBag, Star, Clock, MapPin, Plus, Minus, User, Calendar, ArrowRight, Utensils, Phone, LogOut, Volume2, X, VolumeX, Loader2, CheckCircle, Smartphone, CreditCard, Wallet, Settings, History, ChevronRight, Leaf, Salad } from 'lucide-react';
 import { CATEGORIES, MOCK_MENU, MOCK_PAST_ORDERS } from '../constants';
 import { getSmartRecommendations } from '../services/geminiService';
 import { VoiceAssistant } from './VoiceAssistant';
@@ -18,6 +18,7 @@ interface CustomerViewProps {
 
 export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCart, removeFromCart, placeOrder, userName, onLogout, activeOrders }) => {
   const [activeCategory, setActiveCategory] = useState('All');
+  const [isVegOnly, setIsVegOnly] = useState(false);
   // Navigation State
   const [view, setView] = useState<'MENU' | 'CART' | 'BOOKING' | 'PAYMENT_PROCESSING' | 'ORDERS' | 'PROFILE'>('MENU');
   
@@ -66,9 +67,11 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
     }
   }, [activeOrders]);
 
-  const filteredMenu = activeCategory === 'All' 
-    ? menu 
-    : menu.filter(item => item.category === activeCategory);
+  const filteredMenu = menu.filter(item => {
+    const categoryMatch = activeCategory === 'All' || item.category === activeCategory;
+    const vegMatch = isVegOnly ? item.isVegetarian : true;
+    return categoryMatch && vegMatch;
+  });
 
   const handlePaymentStart = () => {
     if (cart.length === 0 || !deliveryAddress) return;
@@ -266,76 +269,99 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
                     </div>
                 )}
 
-                {/* Sticky Category Filter */}
-                <div className="sticky top-[60px] md:top-[72px] z-30 bg-gray-50/95 backdrop-blur-sm py-2 px-4 md:px-0 border-b border-gray-200 overflow-x-auto whitespace-nowrap no-scrollbar mb-4 transition-all">
-                    {CATEGORIES.map(cat => (
-                        <button
-                            key={cat}
-                            onClick={() => setActiveCategory(cat)}
-                            className={`inline-block mr-2 px-4 py-2 rounded-full text-xs md:text-sm font-bold transition-all shadow-sm ${
-                                activeCategory === cat 
-                                ? 'bg-orange-600 text-white shadow-orange-200 ring-2 ring-orange-100 border-transparent' 
-                                : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
-                            }`}
+                {/* Filters Row (Categories + Veg Toggle) */}
+                <div className="sticky top-[60px] md:top-[72px] z-30 bg-gray-50/95 backdrop-blur-sm py-2 px-4 md:px-0 border-b border-gray-200 mb-4 transition-all">
+                    <div className="flex items-center gap-3 overflow-x-auto no-scrollbar pb-1">
+                        {/* Veg Mode Toggle */}
+                        <button 
+                            onClick={() => setIsVegOnly(!isVegOnly)}
+                            className={`flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-sm ${isVegOnly ? 'bg-green-50 border-green-500 text-green-700 ring-1 ring-green-200' : 'bg-white border-gray-300 text-gray-500'}`}
                         >
-                            {cat}
+                            <div className={`w-3 h-3 border rounded-sm flex items-center justify-center ${isVegOnly ? 'border-green-600' : 'border-gray-400'}`}>
+                                <div className={`w-1.5 h-1.5 rounded-full ${isVegOnly ? 'bg-green-600' : 'bg-gray-400'}`}></div>
+                            </div>
+                            <span>Pure Veg</span>
                         </button>
-                    ))}
+
+                        <div className="w-px h-6 bg-gray-200 flex-shrink-0"></div>
+
+                        {CATEGORIES.map(cat => (
+                            <button
+                                key={cat}
+                                onClick={() => setActiveCategory(cat)}
+                                className={`flex-shrink-0 px-4 py-2 rounded-full text-xs md:text-sm font-bold transition-all shadow-sm ${
+                                    activeCategory === cat 
+                                    ? 'bg-orange-600 text-white shadow-orange-200 ring-2 ring-orange-100 border-transparent' 
+                                    : 'bg-white text-gray-600 border border-gray-200 hover:bg-gray-100'
+                                }`}
+                            >
+                                {cat}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Menu List */}
                 <div className="px-4 pb-8 md:px-0 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
-                    {filteredMenu.map(item => {
-                        const qty = getItemQuantity(item.id);
-                        return (
-                            <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 flex gap-3 md:gap-4 transition-all hover:shadow-lg hover:-translate-y-1">
-                                {/* Image Container */}
-                                <div className="w-24 h-24 md:w-32 md:h-32 flex-shrink-0 rounded-xl bg-gray-100 overflow-hidden relative group">
-                                    <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                                    <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm rounded px-1.5 py-0.5 shadow-sm z-10">
-                                        <div className={`w-3 h-3 border-2 flex items-center justify-center rounded-sm ${item.isVegetarian ? 'border-green-600' : 'border-red-600'}`}>
-                                            <div className={`w-1.5 h-1.5 rounded-full ${item.isVegetarian ? 'bg-green-600' : 'bg-red-600'}`}></div>
+                    {filteredMenu.length === 0 ? (
+                        <div className="col-span-full py-12 text-center text-gray-500">
+                            <Salad size={48} className="mx-auto text-gray-300 mb-3" />
+                            <p>No items found in this category.</p>
+                            {isVegOnly && <button onClick={() => setIsVegOnly(false)} className="text-orange-600 text-xs font-bold mt-2">Disable Pure Veg Mode</button>}
+                        </div>
+                    ) : (
+                        filteredMenu.map(item => {
+                            const qty = getItemQuantity(item.id);
+                            return (
+                                <div key={item.id} className="bg-white rounded-2xl p-3 shadow-sm border border-gray-100 flex gap-3 md:gap-4 transition-all hover:shadow-lg hover:-translate-y-1">
+                                    {/* Image Container */}
+                                    <div className="w-24 h-24 md:w-32 md:h-32 flex-shrink-0 rounded-xl bg-gray-100 overflow-hidden relative group">
+                                        <img src={item.imageUrl} alt={item.name} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                                        <div className="absolute top-1.5 left-1.5 bg-white/95 backdrop-blur-sm rounded px-1.5 py-0.5 shadow-sm z-10">
+                                            <div className={`w-3 h-3 border-2 flex items-center justify-center rounded-sm ${item.isVegetarian ? 'border-green-600' : 'border-red-600'}`}>
+                                                <div className={`w-1.5 h-1.5 rounded-full ${item.isVegetarian ? 'bg-green-600' : 'bg-red-600'}`}></div>
+                                            </div>
                                         </div>
-                                    </div>
-                                    {/* Audio Description Button */}
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); playDishDescription(item.name, item.description, item.id); }}
-                                        className={`absolute bottom-1.5 right-1.5 p-1.5 rounded-full backdrop-blur-md transition-all shadow-sm z-20 ${playingAudio === item.id ? 'bg-orange-600 text-white animate-pulse ring-2 ring-orange-200' : 'bg-white/80 text-gray-700 hover:bg-white hover:text-orange-600'}`}
-                                        title="Listen to Item Name & Description"
-                                    >
-                                        {playingAudio === item.id ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                                    </button>
-                                </div>
-                                
-                                {/* Content Container */}
-                                <div className="flex-1 flex flex-col justify-between py-0.5">
-                                    <div>
-                                        <h3 className="font-extrabold text-gray-900 text-sm md:text-lg leading-tight mb-1">{item.name}</h3>
-                                        <p className="text-[10px] md:text-xs text-gray-500 line-clamp-2 leading-relaxed">{item.description}</p>
+                                        {/* Audio Description Button */}
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); playDishDescription(item.name, item.description, item.id); }}
+                                            className={`absolute bottom-1.5 right-1.5 p-1.5 rounded-full backdrop-blur-md transition-all shadow-sm z-20 ${playingAudio === item.id ? 'bg-orange-600 text-white animate-pulse ring-2 ring-orange-200' : 'bg-white/80 text-gray-700 hover:bg-white hover:text-orange-600'}`}
+                                            title="Listen to Item Name & Description"
+                                        >
+                                            {playingAudio === item.id ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                                        </button>
                                     </div>
                                     
-                                    <div className="flex justify-between items-end mt-2">
-                                        <span className="font-bold text-gray-900 text-base md:text-lg">₹{item.price}</span>
+                                    {/* Content Container */}
+                                    <div className="flex-1 flex flex-col justify-between py-0.5">
+                                        <div>
+                                            <h3 className="font-extrabold text-gray-900 text-sm md:text-lg leading-tight mb-1">{item.name}</h3>
+                                            <p className="text-[10px] md:text-xs text-gray-500 line-clamp-2 leading-relaxed">{item.description}</p>
+                                        </div>
                                         
-                                        {qty === 0 ? (
-                                            <button 
-                                                onClick={() => handleAddToCart(item)}
-                                                className="bg-orange-50 text-orange-700 border border-orange-200 px-4 py-2 rounded-lg text-xs md:text-sm font-bold uppercase tracking-wide hover:bg-orange-600 hover:text-white transition-all active:scale-95 shadow-sm"
-                                            >
-                                                ADD +
-                                            </button>
-                                        ) : (
-                                            <div className="flex items-center gap-3 bg-orange-600 rounded-lg px-2 py-1 shadow-md shadow-orange-200">
-                                                <button onClick={() => removeFromCart(item.id)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Minus size={16} strokeWidth={3} /></button>
-                                                <span className="text-white font-bold text-base w-4 text-center">{qty}</span>
-                                                <button onClick={() => handleAddToCart(item)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Plus size={16} strokeWidth={3} /></button>
-                                            </div>
-                                        )}
+                                        <div className="flex justify-between items-end mt-2">
+                                            <span className="font-bold text-gray-900 text-base md:text-lg">₹{item.price}</span>
+                                            
+                                            {qty === 0 ? (
+                                                <button 
+                                                    onClick={() => handleAddToCart(item)}
+                                                    className="bg-orange-50 text-orange-700 border border-orange-200 px-4 py-2 rounded-lg text-xs md:text-sm font-bold uppercase tracking-wide hover:bg-orange-600 hover:text-white transition-all active:scale-95 shadow-sm"
+                                                >
+                                                    ADD +
+                                                </button>
+                                            ) : (
+                                                <div className="flex items-center gap-3 bg-orange-600 rounded-lg px-2 py-1 shadow-md shadow-orange-200">
+                                                    <button onClick={() => removeFromCart(item.id)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Minus size={16} strokeWidth={3} /></button>
+                                                    <span className="text-white font-bold text-base w-4 text-center">{qty}</span>
+                                                    <button onClick={() => handleAddToCart(item)} className="text-white p-1 hover:bg-orange-700 rounded active:scale-90"><Plus size={16} strokeWidth={3} /></button>
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        );
-                    })}
+                            );
+                        })
+                    )}
                 </div>
               </div>
           )}
