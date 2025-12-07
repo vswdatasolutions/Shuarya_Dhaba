@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, Calendar } from 'lucide-react';
+import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, Calendar, AlertCircle } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MenuItem } from '../types';
 
@@ -24,6 +24,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   const [isListening, setIsListening] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const [messages, setMessages] = useState<{role: 'user' | 'ai', text: string}[]>([]);
   
   const recognitionRef = useRef<any>(null);
@@ -53,9 +54,16 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       // We use Indian English as the base because it often captures regional accents and Hinglish better than strict en-US
       recognitionRef.current.lang = 'en-IN'; 
 
+      recognitionRef.current.onstart = () => {
+        setIsListening(true);
+        setSpeechError(null);
+      };
+
       recognitionRef.current.onresult = (event: any) => {
         const transcript = event.results[0][0].transcript;
-        handleUserMessage(transcript);
+        if (transcript.trim().length > 0) {
+            handleUserMessage(transcript);
+        }
       };
 
       recognitionRef.current.onend = () => {
@@ -65,6 +73,16 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       recognitionRef.current.onerror = (event: any) => {
         console.error("Speech recognition error", event.error);
         setIsListening(false);
+        
+        if (event.error === 'no-speech') {
+            setSpeechError("Didn't catch that. Tap to try again.");
+        } else if (event.error === 'not-allowed') {
+            setSpeechError("Mic permission denied. Check settings.");
+        } else if (event.error === 'network') {
+            setSpeechError("Network error. Check connection.");
+        } else {
+            setSpeechError("Error occurred. Tap to retry.");
+        }
       };
     }
   }, []);
@@ -125,7 +143,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         // Keep last 50 logs to avoid overflow
         if (logs.length > 50) logs.shift();
         localStorage.setItem('dhaba_learning_logs', JSON.stringify(logs));
-        // console.log("Training data saved for self-learning");
     } catch (e) {
         console.warn("Could not save training data", e);
     }
@@ -197,6 +214,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   const handleUserMessage = async (text: string) => {
     setMessages(prev => [...prev, { role: 'user', text }]);
     setIsProcessing(true);
+    setSpeechError(null);
 
     try {
       if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') {
@@ -296,16 +314,26 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   };
 
   const toggleListening = () => {
+    setSpeechError(null);
     if (isListening) {
       recognitionRef.current?.stop();
     } else {
-      setIsListening(true);
-      recognitionRef.current?.start();
+      // Cancel speech synthesis if playing to avoid feedback loop
+      if (isSpeaking) {
+        synthRef.current.cancel();
+      }
+      try {
+        recognitionRef.current?.start();
+      } catch (e) {
+        console.error("Mic start failed", e);
+        setSpeechError("Mic Error. Refresh.");
+      }
     }
   };
 
   const startConversation = () => {
     setIsOpen(true);
+    setSpeechError(null);
     if (messages.length === 0) {
       const intro = "Namaste! Shourya Wada mein aapka swagat hai. Table book karu ya order lenge?";
       setMessages([{ role: 'ai', text: intro }]);
@@ -378,14 +406,20 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
             {/* Mic Control Area */}
             <div className="p-6 bg-white border-t border-gray-100 flex flex-col items-center gap-4 relative">
-               <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-sm text-[10px] font-bold text-gray-500 flex items-center gap-2">
-                  {isSpeaking ? (
+               
+               {/* Status Pill */}
+               <div className={`absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-1 rounded-full shadow-sm text-[10px] font-bold flex items-center gap-2 border ${speechError ? 'bg-red-50 border-red-200 text-red-600' : 'bg-white border-gray-200 text-gray-500'}`}>
+                  {speechError ? (
+                      <span className="flex items-center gap-1">
+                          <AlertCircle size={12} /> {speechError}
+                      </span>
+                  ) : isSpeaking ? (
                       <span className="flex items-center gap-1 text-orange-600">
                           <Volume2 size={12} className="animate-pulse" /> Speaking
                       </span>
                   ) : isListening ? (
                       <span className="flex items-center gap-1 text-red-600 animate-pulse">
-                          <div className="w-1.5 h-1.5 bg-red-600 rounded-full"></div> Listening
+                          <div className="w-1.5 h-1.5 bg-red-600 rounded-full"></div> Listening...
                       </span>
                   ) : (
                       <span>Tap mic to reply</span>
