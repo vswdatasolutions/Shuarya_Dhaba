@@ -7,7 +7,7 @@ interface VoiceAssistantProps {
   menu: MenuItem[];
   addToCart: (item: MenuItem) => void;
   onCheckout: () => void;
-  onBooking: () => void;
+  onBooking: (details?: { people?: number, time?: string }) => void;
 }
 
 interface AIResponse {
@@ -15,6 +15,8 @@ interface AIResponse {
   action: 'ADD_TO_CART' | 'CHECKOUT' | 'NAVIGATE_BOOKING' | 'NONE';
   item?: string;
   quantity?: number;
+  people?: number;
+  time?: string;
 }
 
 export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart, onCheckout, onBooking }) => {
@@ -105,6 +107,31 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   };
 
   /**
+   * SELF-LEARNING SIMULATION
+   * Logs user inputs and successful actions to localStorage.
+   * In a real app, this would send data to a backend to fine-tune the model.
+   */
+  const saveTrainingData = (input: string, action: string, details?: any) => {
+    try {
+        const existingData = localStorage.getItem('dhaba_learning_logs');
+        const logs = existingData ? JSON.parse(existingData) : [];
+        logs.push({
+            timestamp: new Date().toISOString(),
+            input,
+            action,
+            details,
+            languageDetected: 'mixed-indian-polyglot' 
+        });
+        // Keep last 50 logs to avoid overflow
+        if (logs.length > 50) logs.shift();
+        localStorage.setItem('dhaba_learning_logs', JSON.stringify(logs));
+        // console.log("Training data saved for self-learning");
+    } catch (e) {
+        console.warn("Could not save training data", e);
+    }
+  };
+
+  /**
    * SMART OFFLINE FALLBACK (Local Logic Engine)
    * Simulates the AI when API Key is missing or network fails.
    */
@@ -118,8 +145,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
            (item.name.includes("Paneer") && lowerText.includes("paneer")) ||
            (item.name.includes("Dal") && lowerText.includes("dal"))) {
              
-            // Match found!
-            // Try to detect quantity
             let qty = 1;
             if (lowerText.includes("2") || lowerText.includes("do")) qty = 2;
             if (lowerText.includes("3") || lowerText.includes("teen")) qty = 3;
@@ -128,39 +153,43 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
             return {
                 response: `Ji Sir, ${qty} ${item.name} cart mein add kar diya hai. Aur kuch?`,
                 action: 'ADD_TO_CART',
-                item: item.name, // Use exact menu name for matching
+                item: item.name, 
                 quantity: qty
             };
         }
     }
 
-    // 2. Booking Intent
-    if (lowerText.includes("book") || lowerText.includes("table") || lowerText.includes("seat") || lowerText.includes("reserve")) {
+    // 2. Booking Intent (Enhanced with Extraction)
+    if (lowerText.includes("book") || lowerText.includes("table") || lowerText.includes("seat") || lowerText.includes("reserve") || lowerText.includes("pahije") || lowerText.includes("beku")) {
+        // Try to extract number of people (simple heuristic)
+        const peopleMatch = text.match(/(\d+)/);
+        const people = peopleMatch ? parseInt(peopleMatch[0]) : 2;
+
         return {
-            response: "Ji Sir, table book karne ke liye main aapko booking page par le ja raha hoon.",
-            action: 'NAVIGATE_BOOKING'
+            response: `Ji Sir, ${people} logon ke liye table booking open kar raha hoon.`,
+            action: 'NAVIGATE_BOOKING',
+            people: people
         };
     }
 
-    // 3. Checkout Intent
-    if (lowerText.includes("bill") || lowerText.includes("check") || lowerText.includes("payment") || lowerText.includes("pay") || lowerText.includes("order")) {
+    // 3. Checkout Intent (Multilingual)
+    if (lowerText.includes("bill") || lowerText.includes("check") || lowerText.includes("pay") || lowerText.includes("order") || lowerText.includes("dya") || lowerText.includes("kodi")) {
         return {
             response: "Ji Sir, main aapka bill ready kar raha hoon.",
             action: 'CHECKOUT'
         };
     }
 
-    // 4. Greetings / General
+    // 4. Greetings
     if (lowerText.includes("hi") || lowerText.includes("hello") || lowerText.includes("namaste")) {
         return {
-            response: "Namaste Sir! Boliye kya sewa karu?",
+            response: "Namaste Sir! Shourya Wada mein aapka swagat hai. Kya order karenge?",
             action: 'NONE'
         };
     }
 
-    // Default Fallback
     return {
-        response: "Maaf kijiye Sir, main samjha nahi. Kya aap menu se kuch order karna chahenge?",
+        response: "Maaf kijiye Sir, main samjha nahi. Kya aap menu dekhna chahenge?",
         action: 'NONE'
     };
   };
@@ -170,38 +199,41 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     setIsProcessing(true);
 
     try {
-      // Check if API Key exists, if not, throw immediately to use fallback
       if (!apiKey || apiKey === 'YOUR_API_KEY_HERE') {
         throw new Error("No API Key");
       }
 
       const model = 'gemini-2.5-flash';
       
-      const menuContext = menu.map(m => `${m.id}: ${m.name} (₹${m.price}, ${m.isVegetarian ? 'Veg' : 'Non-Veg'})`).join(', ');
+      const menuContext = menu.map(m => `${m.id}: ${m.name} (₹${m.price})`).join(', ');
       
       const systemPrompt = `
-        You are 'Raju', an experienced, extremely polite, and authentic waiter at 'Shourya Wada Dhaba'.
+        You are 'Raju', a smart and polite waiter at 'Shourya Wada Dhaba'.
         
-        **CORE INSTRUCTIONS:**
-        1. **Multilingual Understanding:** The user might speak in Hindi, Marathi, Kannada, or English. Understand the intent even if transcribed phonetically in English.
-        2. **Response Style:** **ALWAYS REPLY IN HINGLISH** (Hindi words using Roman/English alphabet). This is critical for the voice engine.
-           - Good: "Ji Sir, kitne log aayenge?"
-           - Bad: "जी सर, कितने लोग आएंगे" (No Devanagari).
-        3. **Tone:** Warm, respectful, Dhaba-style hospitality ("Ji Sir", "Hukum", "Madam").
-        4. **Confirmations:** When taking an action (like adding to cart), ALWAYS explicitly mention the item name and quantity in your response text so the user knows it worked.
+        **MULTILINGUAL CAPABILITIES:**
+        User may speak in English, Hindi, Marathi, or Kannada.
+        - **Booking Keywords:** "Table lagao", "Book order", "Table pahije" (Marathi), "Seat bekagide" (Kannada), "Reservation".
+        - **Checkout Keywords:** "Bill dya" (Marathi), "Bill lyao" (Hindi), "Bill kodi" (Kannada), "Payment".
+        
+        **YOUR TASK:**
+        1. Identify intent: ADD_TO_CART, CHECKOUT, NAVIGATE_BOOKING, or NONE.
+        2. **Extract Data:**
+           - If Booking: Try to extract 'people' (count) and 'time' (e.g., 20:00).
+        3. **Response:** Speak strictly in **Hinglish** (Roman Hindi) regardless of input language.
+           - Confirm actions explicitly (e.g., "Ji Sir, 4 logon ka table book kar raha hoon").
 
-        **OUTPUT FORMAT:**
-        You must return a **STRICT JSON OBJECT** only. Do not add markdown or extra text.
-        Structure:
+        **OUTPUT FORMAT (Strict JSON):**
         {
-          "response": "Your spoken response in Hinglish",
+          "response": "Hinglish speech text",
           "action": "ADD_TO_CART" | "CHECKOUT" | "NAVIGATE_BOOKING" | "NONE",
-          "item": "Item Name" (only if action is ADD_TO_CART),
-          "quantity": 1 (default 1 if not specified)
+          "item": "Item Name" (if adding to cart),
+          "quantity": 1,
+          "people": 4 (if booking detected, default null),
+          "time": "HH:MM" (if time detected, default null)
         }
 
-        **Menu Context:** ${menuContext}
-        **Current User Input:** "${text}"
+        **Menu:** ${menuContext}
+        **User Input:** "${text}"
       `;
 
       const response = await ai.models.generateContent({
@@ -210,34 +242,39 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         config: { responseMimeType: "application/json" }
       });
 
+      // Sanitization to handle potential markdown code blocks
       const jsonText = response.text.replace(/```json/g, '').replace(/```/g, '').trim();
       const parsedData: AIResponse = JSON.parse(jsonText);
 
       setMessages(prev => [...prev, { role: 'ai', text: parsedData.response }]);
       speakText(parsedData.response);
-      handleActions(parsedData);
+      handleActions(parsedData, text);
 
     } catch (error) {
       console.log("Using Offline Fallback Mode");
-      // Use Robust Local Fallback Logic
       const mockResponse = generateMockResponse(text);
       
-      // Artificial delay to simulate "Thinking"
       setTimeout(() => {
         setMessages(prev => [...prev, { role: 'ai', text: mockResponse.response }]);
         speakText(mockResponse.response);
-        handleActions(mockResponse);
+        handleActions(mockResponse, text);
       }, 800);
     } finally {
       setIsProcessing(false);
     }
   };
 
-  const handleActions = (data: AIResponse) => {
+  const handleActions = (data: AIResponse, originalInput: string) => {
+      // Save data for self-learning
+      if (data.action !== 'NONE') {
+          saveTrainingData(originalInput, data.action, { item: data.item, people: data.people });
+      }
+
       if (data.action === 'NAVIGATE_BOOKING') {
          setTimeout(() => {
             setIsOpen(false);
-            onBooking();
+            // Pass extracted data to pre-fill the form
+            onBooking({ people: data.people, time: data.time });
          }, 2500);
       } else if (data.action === 'CHECKOUT') {
          setTimeout(() => {
@@ -245,7 +282,6 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
             onCheckout();
          }, 2500);
       } else if (data.action === 'ADD_TO_CART' && data.item) {
-         // Fuzzy find item (Robust matching)
          const targetName = data.item.toLowerCase();
          const item = menu.find(m => {
             const menuName = m.name.toLowerCase();
@@ -271,17 +307,15 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   const startConversation = () => {
     setIsOpen(true);
     if (messages.length === 0) {
-      // Hinglish Greeting
-      const intro = "Namaste Sir! Shourya Wada mein aapka swagat hai. Kya lenge aaj? Veg ya Non-Veg?";
+      const intro = "Namaste! Shourya Wada mein aapka swagat hai. Table book karu ya order lenge?";
       setMessages([{ role: 'ai', text: intro }]);
-      // Small delay to allow UI to render before speaking
       setTimeout(() => speakText(intro), 500);
     }
   };
 
   return (
     <>
-      {/* Floating Mic Button - Huge for Mobile */}
+      {/* Floating Mic Button */}
       <button 
         onClick={startConversation}
         className="fixed bottom-24 right-4 md:bottom-20 z-[60] bg-gradient-to-r from-orange-600 to-red-600 text-white p-5 rounded-full shadow-lg shadow-orange-500/50 hover:scale-110 transition-transform animate-bounce-slow border-4 border-white group active:scale-95"
@@ -306,7 +340,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
                 </div>
                 <div>
                   <h3 className="font-bold text-xl leading-tight">Raju (Waiter)</h3>
-                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">Hindi • Marathi • Kannada • English</p>
+                  <p className="text-[10px] text-orange-100 uppercase tracking-wider font-bold opacity-90">Hindi • Marathi • Kannada</p>
                 </div>
               </div>
               <button 
@@ -342,9 +376,8 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
               <div ref={(el) => el?.scrollIntoView({ behavior: 'smooth' })}></div>
             </div>
 
-            {/* Mic Control Area - Massive Button for easier clicking */}
+            {/* Mic Control Area */}
             <div className="p-6 bg-white border-t border-gray-100 flex flex-col items-center gap-4 relative">
-               {/* Status Pill */}
                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white border border-gray-200 px-3 py-1 rounded-full shadow-sm text-[10px] font-bold text-gray-500 flex items-center gap-2">
                   {isSpeaking ? (
                       <span className="flex items-center gap-1 text-orange-600">

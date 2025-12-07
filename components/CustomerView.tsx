@@ -156,6 +156,18 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
     }
   };
 
+  const handleBookingFromVoice = (details?: { people?: number, time?: string }) => {
+    if (details) {
+        setBookingDetails(prev => ({
+            ...prev,
+            people: details.people || prev.people,
+            // If time is provided by AI (e.g., "20:00"), assume today
+            time: details.time ? `${new Date().toISOString().split('T')[0]}T${details.time}` : prev.time
+        }));
+    }
+    setView('BOOKING');
+  };
+
   return (
     <div className="pb-24 md:pb-0 bg-gray-50 min-h-screen font-sans flex flex-col transition-all duration-300 relative">
       
@@ -164,7 +176,7 @@ export const CustomerView: React.FC<CustomerViewProps> = ({ menu, cart, addToCar
         menu={menu} 
         addToCart={handleAddToCart} 
         onCheckout={() => setView('CART')} 
-        onBooking={() => setView('BOOKING')}
+        onBooking={handleBookingFromVoice}
       />
 
       {/* Live Order Status Banner */}
