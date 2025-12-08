@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, AlertCircle, Plus } from 'lucide-react';
+import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, AlertCircle, Plus, Check } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MenuItem } from '../types';
 
@@ -10,11 +10,15 @@ interface VoiceAssistantProps {
   onBooking: (details?: { people?: number, time?: string }) => void;
 }
 
+interface OrderItem {
+    itemId: string;
+    quantity: number;
+}
+
 interface AIResponse {
   response: string;
-  action: 'ADD_TO_CART' | 'CHECKOUT' | 'NAVIGATE_BOOKING' | 'NONE';
-  item?: string;
-  quantity?: number;
+  action: 'ADD_ORDER' | 'CHECKOUT' | 'NAVIGATE_BOOKING' | 'NONE';
+  orders?: OrderItem[]; // Support multiple items
   people?: number;
   time?: string;
   recommendations?: string[]; // List of Item IDs to show cards
@@ -161,25 +165,47 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
   const generateMockResponse = (text: string): AIResponse => {
     const lowerText = text.toLowerCase();
     
-    // 1. Check for Menu Items
-    for (const item of menu) {
-        if (lowerText.includes(item.name.toLowerCase()) || 
-           (item.name.includes("chicken") && lowerText.includes("chicken")) ||
-           (item.name.includes("paneer") && lowerText.includes("paneer")) ||
-           (item.name.includes("dal") && lowerText.includes("dal"))) {
-             
-            let qty = 1;
-            if (lowerText.includes("2") || lowerText.includes("do")) qty = 2;
-            if (lowerText.includes("3") || lowerText.includes("teen")) qty = 3;
-            if (lowerText.includes("4") || lowerText.includes("chaar")) qty = 4;
-
-            return {
-                response: `Ji Sir, ${qty} ${item.name} add kar diya hai. Aur kuch?`,
-                action: 'ADD_TO_CART',
-                item: item.name, 
-                quantity: qty
-            };
+    // 1. Check for Multiple Menu Items (Simple logic)
+    const detectedItems: OrderItem[] = [];
+    
+    // Helper to find quantity near a match
+    const getQty = (idx: number, words: string[]) => {
+        if (idx > 0) {
+            const prev = words[idx-1];
+            if (prev === '2' || prev === 'do' || prev === 'two') return 2;
+            if (prev === '3' || prev === 'teen' || prev === 'three') return 3;
+            if (prev === '4' || prev === 'char' || prev === 'four') return 4;
+            if (prev === '5' || prev === 'panch' || prev === 'five') return 5;
         }
+        return 1;
+    };
+
+    const words = lowerText.split(' ');
+    
+    menu.forEach(item => {
+        const itemNameParts = item.name.toLowerCase().split(' ');
+        // Check if full name or significant part exists in text
+        if (lowerText.includes(item.name.toLowerCase()) || 
+           (itemNameParts.length > 1 && lowerText.includes(itemNameParts[0]) && lowerText.includes(itemNameParts[1]))) {
+            
+             // Attempt to find quantity
+             const matchIndex = words.findIndex(w => item.name.toLowerCase().includes(w));
+             const qty = getQty(matchIndex, words);
+             
+             // Avoid duplicates if already added (simple check)
+             if (!detectedItems.find(i => i.itemId === item.id)) {
+                 detectedItems.push({ itemId: item.id, quantity: qty });
+             }
+        }
+    });
+
+    if (detectedItems.length > 0) {
+         const itemNames = detectedItems.map(i => `${i.quantity} ${menu.find(m => m.id === i.itemId)?.name}`).join(', ');
+         return {
+             response: `Ji Sir, maine ${itemNames} add kar diya hai. Aur kuch lenge?`,
+             action: 'ADD_ORDER',
+             orders: detectedItems
+         };
     }
 
     // 2. Booking Intent
@@ -203,7 +229,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     }
 
     // 4. Menu/Recommendation Intent -> Show Cards
-    if (lowerText.includes("menu") || lowerText.includes("recommend") || lowerText.includes("kya hai") || lowerText.includes("badiya") || lowerText.includes("show")) {
+    if (lowerText.includes("menu") || lowerText.includes("recommend") || lowerText.includes("kya hai") || lowerText.includes("badiya") || lowerText.includes("show") || lowerText.includes("hungry")) {
         // Return popular items
         const popularIds = menu.filter(m => m.price > 200).slice(0, 4).map(m => m.id);
         return {
@@ -216,7 +242,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     // 5. Greetings
     if (lowerText.includes("hi") || lowerText.includes("hello") || lowerText.includes("namaste")) {
         return {
-            response: "Namaste Sir! Shourya Wada mein aapka swagat hai. Kya order karenge?",
+            response: "Namaste Sir! Shourya Wada mein aapka swagat hai. Main Raju, aapka waiter. Kya khaenge aaj?",
             action: 'NONE'
         };
     }
@@ -241,50 +267,43 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
       const model = 'gemini-2.5-flash';
       
-      const menuContext = menu.map(m => `${m.id}: ${m.name} (₹${m.price})`).join(', ');
+      const menuContext = menu.map(m => `ID:${m.id} Name:${m.name} Price:${m.price} Tags:${m.category},${m.description},${m.isVegetarian?'Veg':'NonVeg'}`).join('\n');
       
       const systemPrompt = `
-        You are 'Raju', a smart and polite waiter at 'Shourya Wada Dhaba'.
+        You are 'Raju', a friendly and smart waiter at 'Shourya Wada Dhaba'.
         
-        **MULTILINGUAL CAPABILITIES:**
-        User may speak in English, Hindi, Marathi, or Kannada.
-        You MUST respond in Roman Script (Hinglish/Transliterated) so the audio engine can read it.
+        **YOUR GOAL:**
+        Assist the customer in ordering food, booking tables, or paying the bill. You must understand Hinglish, Hindi, Marathi, Kannada, and English.
         
-        **CONVERSATIONAL FLOWS (Follow these patterns closely):**
+        **MENU CONTEXT:**
+        ${menuContext}
 
-        **Hinglish Flow:**
-        User: "Veg" -> You: "Veg perfect! Rice pasand karte ho ya Roti?"
-        User: "Rice" -> You: "Toh aapke liye best recommendation — Dal Khichdi ya Jeera Rice + Paneer Butter Masala. Kya order karu?"
-
-        **Hindi Flow:**
-        User: "Non-veg" -> You: "Bahut badiya! Chicken ya Mutton mein se kya prefer karte hain?"
-        User: "Chicken" -> You: "Humare special mein aaj Butter Chicken aur Lasoon Chicken Soup hai. Main order place kar doon?"
-
-        **Marathi Flow (Respond in Roman Marathi/Hinglish):**
-        User: "Veg" -> You: "Chhan! Bhaat ki Poli aavadte?"
-        User: "Bhaat" -> You: "Mag tumchyasathi uttam option — Dal Khichdi kivva Jeera Rice + Kaju Masala. Order karu ka?"
-
-        **Kannada Flow (Respond in Roman Kannada/Hinglish):**
-        User: "Veg" -> You: "Rice ishtana athava Roti?"
-        User: "Rice" -> You: "Haagidre nimge suit aagodu — Dal Khichdi athava Jeera Rice + Paneer Masala. Order confirm madbahuda?"
-
-        **YOUR TASK:**
-        1. Identify intent (Ordering, Booking, Checkout).
-        2. **Response:** Speak strictly in **Hinglish/Roman Script** based on the detected language flow above.
-        3. **Visuals:** If user asks for menu/recommendations, return matching Item IDs in 'recommendations' array.
-        4. **Confirmations:** When adding items, explicitly say "Ji Sir, [Item] add kar diya".
+        **RULES:**
+        1. **Speak Hinglish:** Always respond in Roman Script (Hinglish). Use terms like "Ji Sir", "Bilkul", "Badiya choice hai".
+        2. **Dynamic Ordering:** The user might order multiple items at once (e.g., "2 Butter chicken and 5 roti"). You MUST extract ALL of them.
+        3. **Fuzzy Matching:** If user says "Chicken" but menu has "Butter Chicken" and "Chicken Handi", ask or suggest the best one. If user says "Coke" (not in menu), suggest "Masala Chai" or "Lassi".
+        4. **Recommendations:** If user asks "What's good?" or "Kuch spicy khilao", use the tags in the menu to find items and return their IDs in 'recommendations'.
+        5. **No Pizza/Burger:** If user orders generic fast food not on menu, politely say we serve authentic Dhaba food and suggest a menu item.
 
         **OUTPUT FORMAT (Strict JSON):**
         {
-          "response": "Speech text in Roman Script",
-          "action": "ADD_TO_CART" | "CHECKOUT" | "NAVIGATE_BOOKING" | "NONE",
-          "item": "Item Name",
-          "quantity": 1,
+          "response": "Your spoken response in Hinglish",
+          "action": "ADD_ORDER" | "CHECKOUT" | "NAVIGATE_BOOKING" | "NONE",
+          "orders": [ { "itemId": "ID from Menu", "quantity": 1 } ], 
           "people": 4,
-          "recommendations": ["id1", "id2"]
+          "recommendations": ["ID1", "ID2"]
         }
+        
+        **Examples:**
+        User: "Ek butter chicken aur do naan le aao"
+        JSON: { "response": "Ji Sir, 1 Butter Chicken aur 2 Garlic Naan add kar diya.", "action": "ADD_ORDER", "orders": [{"itemId": "1", "quantity": 1}, {"itemId": "10", "quantity": 2}] }
 
-        **Menu:** ${menuContext}
+        User: "Kuch spicy veg main batao"
+        JSON: { "response": "Veg mein hamara Kaju Masala aur Dal Tadka bahot badhiya hai. Thoda spicy hai.", "action": "NONE", "recommendations": ["5", "7"] }
+
+        User: "Table book kardo 5 logon ke liye 8 baje"
+        JSON: { "response": "Ji, 5 logon ke liye 8 baje ki booking kar raha hoon.", "action": "NAVIGATE_BOOKING", "people": 5, "time": "20:00" }
+
         **User Input:** "${text}"
       `;
 
@@ -302,7 +321,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       handleActions(parsedData, text);
 
     } catch (error) {
-      console.log("Using Offline Fallback Mode");
+      console.log("Using Offline Fallback Mode", error);
       const mockResponse = generateMockResponse(text);
       
       setTimeout(() => {
@@ -317,7 +336,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
   const handleActions = (data: AIResponse, originalInput: string) => {
       if (data.action !== 'NONE') {
-          saveTrainingData(originalInput, data.action, { item: data.item, people: data.people });
+          saveTrainingData(originalInput, data.action, { orders: data.orders, people: data.people });
       }
 
       if (data.action === 'NAVIGATE_BOOKING') {
@@ -330,17 +349,17 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
             setIsOpen(false);
             onCheckout();
          }, 2500);
-      } else if (data.action === 'ADD_TO_CART' && data.item) {
-         const targetName = data.item.toLowerCase();
-         const item = menu.find(m => {
-            const menuName = m.name.toLowerCase();
-            return menuName.includes(targetName) || targetName.includes(menuName);
+      } else if (data.action === 'ADD_ORDER' && data.orders) {
+         // Handle multiple items
+         let addedCount = 0;
+         data.orders.forEach(order => {
+             const item = menu.find(m => m.id === order.itemId);
+             if (item) {
+                 const qty = order.quantity || 1;
+                 for(let i=0; i<qty; i++) addToCart(item);
+                 addedCount += qty;
+             }
          });
-         
-         if (item) {
-             const qty = data.quantity || 1;
-             for(let i=0; i<qty; i++) addToCart(item);
-         }
       }
   };
 
@@ -365,7 +384,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     setIsOpen(true);
     setSpeechError(null);
     if (messages.length === 0) {
-      const intro = "Namaste! Shourya Wada mein aapka swagat hai. Kya khaenge aaj?";
+      const intro = "Namaste! Shourya Wada mein aapka swagat hai. Main Raju, aapka waiter. Kya khaenge aaj?";
       setMessages([{ role: 'ai', text: intro }]);
       setTimeout(() => speakText(intro), 500);
     }
