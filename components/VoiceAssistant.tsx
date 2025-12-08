@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, X, MessageSquare, Loader2, Volume2, AlertCircle, Plus, Check } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
@@ -122,7 +123,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
 
     if (indianEnglishVoice) {
         utterance.voice = indianEnglishVoice;
-        utterance.rate = 0.95; 
+        utterance.rate = 0.9; 
     } else if (hindiVoice) {
         utterance.voice = hindiVoice;
         utterance.rate = 1.0; 
@@ -172,7 +173,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     const getQty = (idx: number, words: string[]) => {
         if (idx > 0) {
             const prev = words[idx-1];
-            if (prev === '2' || prev === 'do' || prev === 'two') return 2;
+            if (prev === '2' || prev === 'do' || prev === 'don' || prev === 'two') return 2;
             if (prev === '3' || prev === 'teen' || prev === 'three') return 3;
             if (prev === '4' || prev === 'char' || prev === 'four') return 4;
             if (prev === '5' || prev === 'panch' || prev === 'five') return 5;
@@ -202,7 +203,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     if (detectedItems.length > 0) {
          const itemNames = detectedItems.map(i => `${i.quantity} ${menu.find(m => m.id === i.itemId)?.name}`).join(', ');
          return {
-             response: `Ji Sir, maine ${itemNames} add kar diya hai. Aur kuch lenge?`,
+             response: `Ji Sir, bilkul! ${itemNames} note kar liya hai. Aur kuch lenge? Drink ya Roti?`,
              action: 'ADD_ORDER',
              orders: detectedItems
          };
@@ -214,7 +215,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         const people = peopleMatch ? parseInt(peopleMatch[0]) : 2;
 
         return {
-            response: `Ji Sir, ${people} logon ke liye table booking open kar raha hoon.`,
+            response: `Ho jayega Sir. ${people} logon ke liye table booking open kar raha hoon.`,
             action: 'NAVIGATE_BOOKING',
             people: people
         };
@@ -223,26 +224,26 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
     // 3. Checkout Intent
     if (lowerText.includes("bill") || lowerText.includes("check") || lowerText.includes("pay") || lowerText.includes("order") || lowerText.includes("dya") || lowerText.includes("kodi")) {
         return {
-            response: "Ji Sir, main aapka bill ready kar raha hoon.",
+            response: "Ji Sir, abhi aapka bill ready karta hoon.",
             action: 'CHECKOUT'
         };
     }
 
     // 4. Menu/Recommendation Intent -> Show Cards
-    if (lowerText.includes("menu") || lowerText.includes("recommend") || lowerText.includes("kya hai") || lowerText.includes("badiya") || lowerText.includes("show") || lowerText.includes("hungry")) {
+    if (lowerText.includes("menu") || lowerText.includes("recommend") || lowerText.includes("kya hai") || lowerText.includes("badiya") || lowerText.includes("show") || lowerText.includes("hungry") || lowerText.includes("spicy")) {
         // Return popular items
-        const popularIds = menu.filter(m => m.price > 200).slice(0, 4).map(m => m.id);
+        const popularIds = menu.filter(m => m.price > 180).slice(0, 4).map(m => m.id);
         return {
-            response: "Ye rahe hamare kuch khaas Dhaba specials. Touch karke add karein:",
+            response: "Ye lijiye Sir, hamare Dhaba specials. Inme se kuch try kijiye:",
             action: 'NONE',
             recommendations: popularIds
         };
     }
 
     // 5. Greetings
-    if (lowerText.includes("hi") || lowerText.includes("hello") || lowerText.includes("namaste")) {
+    if (lowerText.includes("hi") || lowerText.includes("hello") || lowerText.includes("namaste") || lowerText.includes("ram") || lowerText.includes("sat sri akal")) {
         return {
-            response: "Namaste Sir! Shourya Wada mein aapka swagat hai. Main Raju, aapka waiter. Kya khaenge aaj?",
+            response: "Namaste Sir! Shourya Wada mein swagat hai. Main Raju. Aaj kya khaas banau aapke liye?",
             action: 'NONE'
         };
     }
@@ -270,24 +271,33 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
       const menuContext = menu.map(m => `ID:${m.id} Name:${m.name} Price:${m.price} Tags:${m.category},${m.description},${m.isVegetarian?'Veg':'NonVeg'}`).join('\n');
       
       const systemPrompt = `
-        You are 'Raju', a friendly and smart waiter at 'Shourya Wada Dhaba'.
+        You are 'Raju', a warm, friendly, and efficient waiter at 'Shourya Wada Dhaba'.
         
         **YOUR GOAL:**
-        Assist the customer in ordering food, booking tables, or paying the bill. You must understand Hinglish, Hindi, Marathi, Kannada, and English.
+        Assist the customer in ordering food, booking tables, or paying the bill. You are MULTILINGUAL.
         
         **MENU CONTEXT:**
         ${menuContext}
 
-        **RULES:**
-        1. **Speak Hinglish:** Always respond in Roman Script (Hinglish). Use terms like "Ji Sir", "Bilkul", "Badiya choice hai".
-        2. **Dynamic Ordering:** The user might order multiple items at once (e.g., "2 Butter chicken and 5 roti"). You MUST extract ALL of them.
-        3. **Fuzzy Matching:** If user says "Chicken" but menu has "Butter Chicken" and "Chicken Handi", ask or suggest the best one. If user says "Coke" (not in menu), suggest "Masala Chai" or "Lassi".
-        4. **Recommendations:** If user asks "What's good?" or "Kuch spicy khilao", use the tags in the menu to find items and return their IDs in 'recommendations'.
-        5. **No Pizza/Burger:** If user orders generic fast food not on menu, politely say we serve authentic Dhaba food and suggest a menu item.
+        **LANGUAGE RULES:**
+        1. **Detect Language:** Identify if user is speaking Hindi, English, Marathi, or Kannada.
+        2. **Reply in SAME Language:** 
+           - If Hindi/Hinglish -> Reply in Hinglish (Roman Script).
+           - If English -> Reply in English.
+           - If Marathi -> Reply in Marathi (Roman Script). Example: "Tumhala kay hava ahe?"
+           - If Kannada -> Reply in Kannada (Roman Script). Example: "Oota ayta?"
+           - **CRITICAL:** ALWAYS use Roman Script for Indian languages so the Text-to-Speech engine can pronounce it. Do not use Devanagari or Kannada script.
+
+        **CONVERSATION FLOW (Next Move):**
+        - If user greets -> Welcomes them & asks "Veg ya Non-Veg?"
+        - If user orders Main Course -> Suggest Roti or Rice (Upsell).
+        - If user orders Starters -> Suggest Main Course.
+        - If user finishes ordering -> Ask "Kuch meetha (Dessert) ya Lassi?"
+        - If user says no -> Ask to confirm order/bill.
 
         **OUTPUT FORMAT (Strict JSON):**
         {
-          "response": "Your spoken response in Hinglish",
+          "response": "Your spoken response in the User's Language (Roman Script)",
           "action": "ADD_ORDER" | "CHECKOUT" | "NAVIGATE_BOOKING" | "NONE",
           "orders": [ { "itemId": "ID from Menu", "quantity": 1 } ], 
           "people": 4,
@@ -295,14 +305,20 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
         }
         
         **Examples:**
+        User: "Namaste"
+        JSON: { "response": "Namaste Sir! Shourya Wada mein swagat hai. Aaj kya seva karu? Veg ya Non-veg?", "action": "NONE" }
+
         User: "Ek butter chicken aur do naan le aao"
-        JSON: { "response": "Ji Sir, 1 Butter Chicken aur 2 Garlic Naan add kar diya.", "action": "ADD_ORDER", "orders": [{"itemId": "1", "quantity": 1}, {"itemId": "10", "quantity": 2}] }
+        JSON: { "response": "Ji Sir, 1 Butter Chicken aur 2 Garlic Naan note kar liya hai. Sath mein Jeera Rice lau?", "action": "ADD_ORDER", "orders": [{"itemId": "301", "quantity": 1}, {"itemId": "404", "quantity": 2}] }
 
-        User: "Kuch spicy veg main batao"
-        JSON: { "response": "Veg mein hamara Kaju Masala aur Dal Tadka bahot badhiya hai. Thoda spicy hai.", "action": "NONE", "recommendations": ["5", "7"] }
+        User (Marathi): "Jevana saathi table pahije"
+        JSON: { "response": "Ho, nakki. Kiti lok aahat tumhi?", "action": "NAVIGATE_BOOKING", "people": 2 }
 
-        User: "Table book kardo 5 logon ke liye 8 baje"
-        JSON: { "response": "Ji, 5 logon ke liye 8 baje ki booking kar raha hoon.", "action": "NAVIGATE_BOOKING", "people": 5, "time": "20:00" }
+        User (Kannada): "Oota enide?" (What food is there?)
+        JSON: { "response": "Namaskara! Nam hattira Chicken 65 mattu Mutton Handi thumba chennagide. Try maadtheera?", "action": "NONE", "recommendations": ["101", "305"] }
+
+        User: "Bas bill le aao"
+        JSON: { "response": "Ji Sir, bill ready kar raha hoon.", "action": "CHECKOUT" }
 
         **User Input:** "${text}"
       `;
@@ -343,7 +359,7 @@ export const VoiceAssistant: React.FC<VoiceAssistantProps> = ({ menu, addToCart,
          setTimeout(() => {
             setIsOpen(false);
             onBooking({ people: data.people, time: data.time });
-         }, 2500);
+         }, 3500); // Wait for speech to finish mostly
       } else if (data.action === 'CHECKOUT') {
          setTimeout(() => {
             setIsOpen(false);
