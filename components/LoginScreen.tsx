@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Role } from '../types';
-import { ChefHat, Truck, LayoutGrid, User, ArrowRight, Lock, Phone, KeyRound } from 'lucide-react';
+import { ChefHat, Truck, LayoutGrid, User, ArrowRight, Lock, Phone, KeyRound, Zap } from 'lucide-react';
 
 interface LoginScreenProps {
   onLogin: (role: Role, name: string) => void;
@@ -153,49 +153,79 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
               )}
             </form>
           ) : (
-            <form onSubmit={handleStaffLogin} className="space-y-5">
-              <div className="grid grid-cols-3 gap-3 mb-2">
-                <button 
-                  type="button"
-                  onClick={() => setStaffRole(Role.ADMIN)}
-                  className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${staffRole === Role.ADMIN ? 'bg-orange-50 border-orange-200 text-orange-700 ring-2 ring-orange-100' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'}`}
-                >
-                  <LayoutGrid size={24} />
-                  <span className="text-xs font-bold">Owner</span>
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setStaffRole(Role.KITCHEN)}
-                  className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${staffRole === Role.KITCHEN ? 'bg-blue-50 border-blue-200 text-blue-700 ring-2 ring-blue-100' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'}`}
-                >
-                  <ChefHat size={24} />
-                  <span className="text-xs font-bold">Kitchen</span>
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => setStaffRole(Role.DELIVERY)}
-                  className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${staffRole === Role.DELIVERY ? 'bg-green-50 border-green-200 text-green-700 ring-2 ring-green-100' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'}`}
-                >
-                  <Truck size={24} />
-                  <span className="text-xs font-bold">Delivery</span>
-                </button>
-              </div>
+            <div className="space-y-5">
+              <form onSubmit={handleStaffLogin} className="space-y-5">
+                <div className="grid grid-cols-3 gap-3 mb-2">
+                  <button 
+                    type="button"
+                    onClick={() => setStaffRole(Role.ADMIN)}
+                    className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${staffRole === Role.ADMIN ? 'bg-orange-50 border-orange-200 text-orange-700 ring-2 ring-orange-100' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'}`}
+                  >
+                    <LayoutGrid size={24} />
+                    <span className="text-xs font-bold">Owner</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setStaffRole(Role.KITCHEN)}
+                    className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${staffRole === Role.KITCHEN ? 'bg-blue-50 border-blue-200 text-blue-700 ring-2 ring-blue-100' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'}`}
+                  >
+                    <ChefHat size={24} />
+                    <span className="text-xs font-bold">Kitchen</span>
+                  </button>
+                  <button 
+                    type="button"
+                    onClick={() => setStaffRole(Role.DELIVERY)}
+                    className={`p-3 rounded-xl border flex flex-col items-center gap-2 transition-all ${staffRole === Role.DELIVERY ? 'bg-green-50 border-green-200 text-green-700 ring-2 ring-green-100' : 'bg-gray-50 border-gray-100 text-gray-500 hover:bg-gray-100'}`}
+                  >
+                    <Truck size={24} />
+                    <span className="text-xs font-bold">Delivery</span>
+                  </button>
+                </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Password</label>
-                <input 
-                    type="password" 
-                    className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-200 outline-none"
-                    placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-500 uppercase mb-2">Password</label>
+                  <input 
+                      type="password" 
+                      className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-200 outline-none"
+                      placeholder="Enter password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                  />
+                </div>
 
-              <button type="submit" className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-lg active:scale-95">
-                Access Dashboard
-              </button>
-            </form>
+                <button type="submit" className="w-full bg-gray-900 text-white py-4 rounded-xl font-bold shadow-lg active:scale-95">
+                  Access Dashboard
+                </button>
+              </form>
+
+              {/* Quick Login for Demo */}
+              <div className="pt-6 border-t border-gray-100">
+                <div className="flex items-center gap-2 mb-3 justify-center text-orange-600">
+                  <Zap size={16} fill="currentColor" />
+                  <p className="text-xs font-bold uppercase tracking-widest">One-Click Demo Access</p>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <button
+                    onClick={() => onLogin(Role.ADMIN, 'Owner')}
+                    className="py-2.5 bg-orange-100 text-orange-800 rounded-lg text-xs font-bold hover:bg-orange-200 transition-colors"
+                  >
+                    Login Owner
+                  </button>
+                  <button
+                    onClick={() => onLogin(Role.KITCHEN, 'Head Chef')}
+                    className="py-2.5 bg-blue-100 text-blue-800 rounded-lg text-xs font-bold hover:bg-blue-200 transition-colors"
+                  >
+                    Login Chef
+                  </button>
+                  <button
+                    onClick={() => onLogin(Role.DELIVERY, 'Rider')}
+                    className="py-2.5 bg-green-100 text-green-800 rounded-lg text-xs font-bold hover:bg-green-200 transition-colors"
+                  >
+                    Login Rider
+                  </button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </div>
